@@ -47,6 +47,8 @@ build/LightMD Reader.app
 build/LightMD Reader.dmg
 ```
 
+DMG 打开后会显示拖拽安装引导：把 `LightMD Reader` 拖到 `Applications`。
+
 ## 使用
 
 - 直接运行 App 后点击「打开」选择 Markdown 文件。
