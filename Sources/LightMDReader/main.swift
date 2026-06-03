@@ -105,7 +105,8 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let webView = WKWebView()
     private let titleLabel = NSTextField(labelWithString: "LightMD Reader")
     private let detailLabel = NSTextField(labelWithString: "双击即读 Markdown")
-    private let openButton = NSButton(title: "打开", target: nil, action: nil)
+    private let openButton = NSButton(title: "", target: nil, action: nil)
+    private let statusLabel = NSTextField(labelWithString: "只读")
 
     init() {
         let window = NSWindow(
@@ -116,6 +117,9 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         )
         window.title = "LightMD Reader"
         window.minSize = NSSize(width: 720, height: 480)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
         super.init(window: window)
         setupUI()
     }
@@ -152,6 +156,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             return
         }
 
+        updateStatus()
         let nextIndex = min(selectedIndex, documents.count - 1)
         selectDocument(at: nextIndex)
     }
@@ -177,6 +182,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         }
 
         tableView.reloadData()
+        updateStatus()
 
         if let firstNewIndex {
             selectDocument(at: firstNewIndex)
@@ -187,7 +193,8 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
     func showWelcome() {
         titleLabel.stringValue = "LightMD Reader"
-        detailLabel.stringValue = "打开一个 .md 文件，直接阅读渲染后的内容"
+        detailLabel.stringValue = "只读 · 等待打开 Markdown"
+        updateStatus()
         webView.loadHTMLString(renderer.welcomeHTML(), baseURL: nil)
     }
 
@@ -206,7 +213,10 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             splitView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
 
-        let sidebar = NSView()
+        let sidebar = NSVisualEffectView()
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .behindWindow
+        sidebar.state = .active
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebar.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
 
@@ -217,13 +227,16 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         sidebarHeader.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 8, right: 10)
         sidebarHeader.translatesAutoresizingMaskIntoConstraints = false
 
-        let appLabel = NSTextField(labelWithString: "文件")
+        let appLabel = NSTextField(labelWithString: "打开的文件")
         appLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         appLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         openButton.target = self
         openButton.action = #selector(openDocument(_:))
+        openButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "打开文件")
+        openButton.imagePosition = .imageOnly
         openButton.bezelStyle = .rounded
         openButton.controlSize = .small
+        openButton.toolTip = "打开 Markdown 文件"
         sidebarHeader.addArrangedSubview(appLabel)
         sidebarHeader.addArrangedSubview(openButton)
 
@@ -231,8 +244,10 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        tableView.backgroundColor = .clear
         tableView.headerView = nil
-        tableView.rowHeight = 48
+        tableView.rowHeight = 54
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
         tableView.dataSource = self
         tableView.delegate = self
@@ -242,8 +257,14 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         tableView.addTableColumn(column)
         scrollView.documentView = tableView
 
+        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.alignment = .center
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+
         sidebar.addSubview(sidebarHeader)
         sidebar.addSubview(scrollView)
+        sidebar.addSubview(statusLabel)
         NSLayoutConstraint.activate([
             sidebarHeader.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             sidebarHeader.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
@@ -251,7 +272,10 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             scrollView.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor)
+            scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -8),
+            statusLabel.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
+            statusLabel.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            statusLabel.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -12)
         ])
 
         let reader = NSStackView()
@@ -262,7 +286,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         let header = NSStackView()
         header.orientation = .vertical
         header.spacing = 2
-        header.edgeInsets = NSEdgeInsets(top: 12, left: 18, bottom: 10, right: 18)
+        header.edgeInsets = NSEdgeInsets(top: 16, left: 24, bottom: 12, right: 24)
         header.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -297,6 +321,19 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
         cell.subviews.forEach { $0.removeFromSuperview() }
 
+        let icon = NSTextField(labelWithString: "#")
+        icon.font = .systemFont(ofSize: 13, weight: .bold)
+        icon.textColor = .white
+        icon.alignment = .center
+        icon.wantsLayer = true
+        icon.layer?.backgroundColor = NSColor.systemBlue.cgColor
+        icon.layer?.cornerRadius = 6
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 26),
+            icon.heightAnchor.constraint(equalToConstant: 26)
+        ])
+
         let title = NSTextField(labelWithString: documents[row].title)
         title.font = .systemFont(ofSize: 13, weight: .medium)
         title.lineBreakMode = .byTruncatingMiddle
@@ -306,15 +343,20 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         path.textColor = .secondaryLabelColor
         path.lineBreakMode = .byTruncatingMiddle
 
-        let stack = NSStackView(views: [title, path])
-        stack.orientation = .vertical
-        stack.spacing = 3
+        let textStack = NSStackView(views: [title, path])
+        textStack.orientation = .vertical
+        textStack.spacing = 3
+
+        let stack = NSStackView(views: [icon, textStack])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 9
         stack.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
+            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -12),
             stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
         ])
 
@@ -334,9 +376,30 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
         let document = documents[index]
         titleLabel.stringValue = document.title
-        detailLabel.stringValue = document.subtitle
+        detailLabel.stringValue = "只读 · \(formattedSize(for: document.content)) · \(document.subtitle)"
         window?.title = document.title
+        updateStatus()
         webView.loadHTMLString(renderer.render(document.content, title: document.title), baseURL: document.url.deletingLastPathComponent())
+    }
+
+    private func updateStatus() {
+        if documents.isEmpty {
+            statusLabel.stringValue = "只读 · 未打开文件"
+        } else {
+            statusLabel.stringValue = "只读 · \(documents.count) 个文件"
+        }
+    }
+
+    private func formattedSize(for content: String) -> String {
+        let bytes = content.lengthOfBytes(using: .utf8)
+        if bytes < 1024 {
+            return "\(bytes) B"
+        }
+        let kb = Double(bytes) / 1024
+        if kb < 1024 {
+            return String(format: "%.1f KB", kb)
+        }
+        return String(format: "%.1f MB", kb / 1024)
     }
 
     private func showError(_ message: String, detail: String) {
@@ -354,11 +417,12 @@ final class MarkdownRenderer {
         pageHTML(
             title: "LightMD Reader",
             body: """
-            <main class="welcome">
+            <section class="welcome">
+              <div class="brand-mark">#</div>
               <h1>双击即读 Markdown</h1>
-              <p>打开一个 <code>.md</code> 文件后，这里会直接显示排版后的阅读视图。</p>
-              <p class="muted">默认只读，不会修改原文件。</p>
-            </main>
+              <p>为 AI 工具生成的临时文档准备的轻便阅读视图。</p>
+              <p class="muted">只读预览 · 本地文件 · 不建知识库</p>
+            </section>
             """
         )
     }
@@ -378,23 +442,25 @@ final class MarkdownRenderer {
           <style>
             :root {
               color-scheme: light dark;
-              --bg: #ffffff;
-              --fg: #202124;
-              --muted: #6b7280;
-              --border: #d8dde6;
-              --code-bg: #f5f7fb;
-              --quote-bg: #f7f9fc;
-              --link: #0a65cc;
+              --bg: #fbfcfe;
+              --fg: #1d2433;
+              --muted: #667085;
+              --border: #d6deea;
+              --code-bg: #f2f5f9;
+              --quote-bg: #f4f8fb;
+              --link: #1769e0;
+              --accent: #13a37f;
             }
             @media (prefers-color-scheme: dark) {
               :root {
-                --bg: #1f2023;
-                --fg: #eceff4;
-                --muted: #a6adbb;
-                --border: #3a3f4b;
-                --code-bg: #292d35;
-                --quote-bg: #252a32;
-                --link: #8ab4ff;
+                --bg: #1f2228;
+                --fg: #edf1f7;
+                --muted: #a8b1c1;
+                --border: #3a4250;
+                --code-bg: #292f38;
+                --quote-bg: #252d35;
+                --link: #8bb8ff;
+                --accent: #4fc3a1;
               }
             }
             body {
@@ -403,24 +469,40 @@ final class MarkdownRenderer {
               color: var(--fg);
               font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
               font-size: 16px;
-              line-height: 1.68;
+              line-height: 1.72;
             }
             main {
-              max-width: 860px;
+              max-width: 820px;
               margin: 0 auto;
-              padding: 34px 42px 64px;
+              padding: 40px 48px 72px;
             }
             .welcome {
-              padding-top: 20vh;
+              padding-top: 18vh;
+              max-width: 560px;
+            }
+            .brand-mark {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 52px;
+              height: 52px;
+              border-radius: 14px;
+              margin-bottom: 18px;
+              background: var(--link);
+              color: white;
+              font-size: 28px;
+              font-weight: 800;
+              line-height: 1;
             }
             h1, h2, h3, h4, h5, h6 {
               line-height: 1.28;
-              margin: 1.3em 0 0.55em;
+              margin: 1.45em 0 0.55em;
+              letter-spacing: 0;
             }
             h1:first-child, h2:first-child, h3:first-child {
               margin-top: 0;
             }
-            h1 { font-size: 2rem; }
+            h1 { font-size: 2.08rem; }
             h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
             h3 { font-size: 1.25rem; }
             p { margin: 0.65em 0; }
@@ -447,8 +529,8 @@ final class MarkdownRenderer {
             }
             blockquote {
               margin: 1em 0;
-              padding: 0.7em 1em;
-              border-left: 4px solid var(--border);
+              padding: 0.75em 1em;
+              border-left: 4px solid var(--accent);
               background: var(--quote-bg);
               color: var(--fg);
             }
