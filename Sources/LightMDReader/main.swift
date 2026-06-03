@@ -150,8 +150,6 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let splitView = NSSplitView()
     private let tableView = NSTableView()
     private let webView = WKWebView()
-    private let editorScrollView = NSScrollView()
-    private let editorTextView = NSTextView()
     private let titleLabel = NSTextField(labelWithString: appDisplayName)
     private let detailLabel = NSTextField(labelWithString: "双击即读 Markdown")
     private let openButton = NSButton(title: "", target: nil, action: nil)
@@ -251,7 +249,6 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     func showWelcome() {
         titleLabel.stringValue = appDisplayName
         detailLabel.stringValue = "只读 · 等待打开 Markdown"
-        editorTextView.string = ""
         modeControl.selectedSegment = 0
         updateMode()
         updateStatus()
@@ -405,20 +402,8 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         header.addArrangedSubview(controls)
 
         webView.setValue(false, forKey: "drawsBackground")
-        editorTextView.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
-        editorTextView.isRichText = false
-        editorTextView.isAutomaticQuoteSubstitutionEnabled = false
-        editorTextView.isAutomaticDashSubstitutionEnabled = false
-        editorTextView.isAutomaticTextReplacementEnabled = false
-        editorTextView.allowsUndo = true
-        editorTextView.textContainerInset = NSSize(width: 28, height: 24)
-        editorScrollView.documentView = editorTextView
-        editorScrollView.hasVerticalScroller = true
-        editorScrollView.borderType = .noBorder
-        editorScrollView.isHidden = true
         reader.addArrangedSubview(header)
         reader.addArrangedSubview(webView)
-        reader.addArrangedSubview(editorScrollView)
 
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(reader)
@@ -515,52 +500,56 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: document.content)) · \(document.subtitle)"
         window?.title = document.title
         updateStatus()
-        editorTextView.string = document.content
         webView.loadHTMLString(renderer.render(document.content, title: document.title), baseURL: document.url.deletingLastPathComponent())
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
+            self?.updateMode()
         }
         updateMode()
     }
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {
-        if sender.selectedSegment == 0, let selectedIndex, documents.indices.contains(selectedIndex) {
-            let document = documents[selectedIndex]
-            webView.loadHTMLString(renderer.render(editorTextView.string, title: document.title), baseURL: document.url.deletingLastPathComponent())
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                self?.applyFontScale()
-            }
-        }
         updateMode()
     }
 
     @objc private func saveCurrentDocument(_ sender: Any?) {
         guard let selectedIndex, documents.indices.contains(selectedIndex) else { return }
-        let content = editorTextView.string
         let url = documents[selectedIndex].url
 
-        do {
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            documents[selectedIndex].content = content
-            tableView.reloadData()
-            detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: content)) · \(documents[selectedIndex].subtitle)"
-            webView.loadHTMLString(renderer.render(content, title: documents[selectedIndex].title), baseURL: url.deletingLastPathComponent())
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                self?.applyFontScale()
+        webView.evaluateJavaScript("window.lightMDExportMarkdown && window.lightMDExportMarkdown();") { [weak self] result, error in
+            guard let self else { return }
+            if let error {
+                self.showError("无法保存文件", detail: error.localizedDescription)
+                return
             }
-        } catch {
-            showError("无法保存文件", detail: "\(url.lastPathComponent)\n\(error.localizedDescription)")
+            guard let content = result as? String else {
+                self.showError("无法保存文件", detail: "页面内容无法转换为 Markdown。")
+                return
+            }
+
+            do {
+                try content.write(to: url, atomically: true, encoding: .utf8)
+                self.documents[selectedIndex].content = content
+                self.tableView.reloadData()
+                self.detailLabel.stringValue = "\(self.modeLabel()) · \(self.formattedSize(for: content)) · \(self.documents[selectedIndex].subtitle)"
+                self.webView.loadHTMLString(self.renderer.render(content, title: self.documents[selectedIndex].title), baseURL: url.deletingLastPathComponent())
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    self?.applyFontScale()
+                    self?.updateMode()
+                }
+            } catch {
+                self.showError("无法保存文件", detail: "\(url.lastPathComponent)\n\(error.localizedDescription)")
+            }
         }
     }
 
     private func updateMode() {
         let isEditing = modeControl.selectedSegment == 1
-        webView.isHidden = isEditing
-        editorScrollView.isHidden = !isEditing
         saveButton.isHidden = !isEditing
         searchField.isHidden = isEditing
         previousMatchButton.isHidden = isEditing
         nextMatchButton.isHidden = isEditing
+        webView.evaluateJavaScript("window.lightMDSetEditing && window.lightMDSetEditing(\(isEditing ? "true" : "false"));")
         detailLabel.stringValue = detailLabel.stringValue.replacingOccurrences(of: isEditing ? "只读" : "编辑", with: modeLabel())
         updateStatus()
     }
@@ -714,12 +703,6 @@ final class MarkdownRenderer {
               backdrop-filter: blur(18px);
               box-sizing: border-box;
             }
-            .toc-title {
-              color: var(--muted);
-              font-size: 0.76rem;
-              font-weight: 700;
-              margin-bottom: 8px;
-            }
             .toc-panel a {
               display: block;
               color: var(--muted);
@@ -832,7 +815,84 @@ final class MarkdownRenderer {
             .muted {
               color: var(--muted);
             }
+            body.editing main {
+              outline: 2px solid color-mix(in srgb, var(--link) 34%, transparent);
+              outline-offset: -18px;
+              border-radius: 12px;
+            }
+            body.editing main:focus {
+              outline-color: color-mix(in srgb, var(--link) 58%, transparent);
+            }
+            body.editing .toc-panel {
+              pointer-events: none;
+              opacity: 0.42;
+            }
           </style>
+          <script>
+            function lightMDSetEditing(enabled) {
+              const main = document.querySelector('main');
+              if (!main) return;
+              document.body.classList.toggle('editing', enabled);
+              main.contentEditable = enabled ? 'true' : 'false';
+              if (enabled) {
+                main.focus();
+              }
+            }
+
+            function lightMDEscape(text) {
+              return (text || '').replace(/\\\\/g, '\\\\\\\\').replace(/`/g, '\\\\`').trim();
+            }
+
+            function lightMDInline(node) {
+              if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+              if (node.nodeType !== Node.ELEMENT_NODE) return '';
+              const tag = node.tagName.toLowerCase();
+              const inner = Array.from(node.childNodes).map(lightMDInline).join('');
+              if (tag === 'strong' || tag === 'b') return '**' + inner + '**';
+              if (tag === 'em' || tag === 'i') return '*' + inner + '*';
+              if (tag === 'code') return '`' + lightMDEscape(inner) + '`';
+              if (tag === 'a') return '[' + inner + '](' + (node.getAttribute('href') || '') + ')';
+              if (tag === 'br') return '\\n';
+              return inner;
+            }
+
+            function lightMDBlock(node) {
+              if (node.nodeType !== Node.ELEMENT_NODE) return '';
+              const tag = node.tagName.toLowerCase();
+              const inline = () => lightMDInline(node).trim();
+              if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + inline();
+              if (tag === 'p') return inline();
+              if (tag === 'blockquote') {
+                return lightMDElements(node).split('\\n').map(line => line ? '> ' + line : '>').join('\\n');
+              }
+              if (tag === 'pre') return '```\\n' + (node.innerText || '').replace(/\\n$/, '') + '\\n```';
+              if (tag === 'ul') {
+                return Array.from(node.children).filter(li => li.tagName.toLowerCase() === 'li').map(li => '- ' + lightMDInline(li).trim()).join('\\n');
+              }
+              if (tag === 'ol') {
+                return Array.from(node.children).filter(li => li.tagName.toLowerCase() === 'li').map((li, i) => (i + 1) + '. ' + lightMDInline(li).trim()).join('\\n');
+              }
+              if (tag === 'table') {
+                const rows = Array.from(node.querySelectorAll('tr')).map(row => Array.from(row.children).map(cell => lightMDInline(cell).trim()));
+                if (!rows.length) return '';
+                const header = rows[0];
+                const separator = header.map(() => '---');
+                const body = rows.slice(1);
+                return [header, separator, ...body].map(row => '| ' + row.join(' | ') + ' |').join('\\n');
+              }
+              if (tag === 'hr') return '---';
+              return lightMDElements(node);
+            }
+
+            function lightMDElements(root) {
+              return Array.from(root.children).map(lightMDBlock).filter(Boolean).join('\\n\\n');
+            }
+
+            function lightMDExportMarkdown() {
+              const main = document.querySelector('main');
+              return main ? lightMDElements(main).trim() + '\\n' : '';
+            }
+          </script>
         </head>
         <body>
           \(tableOfContents)
@@ -956,7 +1016,6 @@ final class MarkdownRenderer {
         guard !links.isEmpty else { return "" }
         return """
         <aside class="toc-panel">
-          <div class="toc-title">目录</div>
           \(links.joined(separator: "\n"))
         </aside>
         """
