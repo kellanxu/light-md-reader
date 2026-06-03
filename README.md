@@ -35,6 +35,18 @@ build/LightMD Reader.app
 ~/Applications/LightMD Reader.app
 ```
 
+## 生成 DMG 安装包
+
+```bash
+./scripts/build_dmg.sh
+```
+
+构建完成后，安装包位于：
+
+```text
+build/LightMD Reader.dmg
+```
+
 ## 使用
 
 - 直接运行 App 后点击「打开」选择 Markdown 文件。

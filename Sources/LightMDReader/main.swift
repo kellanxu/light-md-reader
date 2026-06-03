@@ -67,6 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "查看")
+        viewMenu.addItem(withTitle: "缩小字体", action: #selector(ReaderWindowController.decreaseFontSize(_:)), keyEquivalent: "-")
+        viewMenu.addItem(withTitle: "放大字体", action: #selector(ReaderWindowController.increaseFontSize(_:)), keyEquivalent: "=")
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
         NSApp.mainMenu = mainMenu
     }
 }
@@ -95,7 +102,7 @@ struct MarkdownDocument: Equatable {
     }
 }
 
-final class ReaderWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
+final class ReaderWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     private let renderer = MarkdownRenderer()
     private var documents: [MarkdownDocument] = []
     private var selectedIndex: Int?
@@ -107,6 +114,12 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let detailLabel = NSTextField(labelWithString: "双击即读 Markdown")
     private let openButton = NSButton(title: "", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "只读")
+    private let searchField = NSSearchField()
+    private let previousMatchButton = NSButton(title: "", target: nil, action: nil)
+    private let nextMatchButton = NSButton(title: "", target: nil, action: nil)
+    private let decreaseFontButton = NSButton(title: "A-", target: nil, action: nil)
+    private let increaseFontButton = NSButton(title: "A+", target: nil, action: nil)
+    private var fontScale = 1.0
 
     init() {
         let window = NSWindow(
@@ -284,18 +297,50 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         reader.translatesAutoresizingMaskIntoConstraints = false
 
         let header = NSStackView()
-        header.orientation = .vertical
-        header.spacing = 2
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 14
         header.edgeInsets = NSEdgeInsets(top: 16, left: 24, bottom: 12, right: 24)
         header.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleStack = NSStackView()
+        titleStack.orientation = .vertical
+        titleStack.spacing = 2
+        titleStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingMiddle
         detailLabel.font = .systemFont(ofSize: 12)
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.lineBreakMode = .byTruncatingMiddle
-        header.addArrangedSubview(titleLabel)
-        header.addArrangedSubview(detailLabel)
+        titleStack.addArrangedSubview(titleLabel)
+        titleStack.addArrangedSubview(detailLabel)
+
+        searchField.placeholderString = "查找"
+        searchField.delegate = self
+        searchField.target = self
+        searchField.action = #selector(searchFieldChanged(_:))
+        searchField.controlSize = .small
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.widthAnchor.constraint(equalToConstant: 180).isActive = true
+
+        configureIconButton(previousMatchButton, symbol: "chevron.up", tooltip: "上一个匹配")
+        previousMatchButton.action = #selector(findPrevious(_:))
+        configureIconButton(nextMatchButton, symbol: "chevron.down", tooltip: "下一个匹配")
+        nextMatchButton.action = #selector(findNext(_:))
+        configureTextButton(decreaseFontButton, tooltip: "缩小字体")
+        decreaseFontButton.action = #selector(decreaseFontSize(_:))
+        configureTextButton(increaseFontButton, tooltip: "放大字体")
+        increaseFontButton.action = #selector(increaseFontSize(_:))
+
+        let controls = NSStackView(views: [searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton])
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.spacing = 6
+
+        header.addArrangedSubview(titleStack)
+        header.addArrangedSubview(controls)
 
         webView.setValue(false, forKey: "drawsBackground")
         reader.addArrangedSubview(header)
@@ -306,6 +351,23 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         splitView.setPosition(240, ofDividerAt: 0)
 
         window?.center()
+    }
+
+    private func configureIconButton(_ button: NSButton, symbol: String, tooltip: String) {
+        button.target = self
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
+        button.imagePosition = .imageOnly
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.toolTip = tooltip
+    }
+
+    private func configureTextButton(_ button: NSButton, tooltip: String) {
+        button.target = self
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.toolTip = tooltip
+        button.font = .systemFont(ofSize: 11, weight: .semibold)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -380,6 +442,45 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         window?.title = document.title
         updateStatus()
         webView.loadHTMLString(renderer.render(document.content, title: document.title), baseURL: document.url.deletingLastPathComponent())
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.applyFontScale()
+        }
+    }
+
+    @objc private func searchFieldChanged(_ sender: NSSearchField) {
+        runFind(backwards: false)
+    }
+
+    @objc private func findNext(_ sender: Any?) {
+        runFind(backwards: false)
+    }
+
+    @objc private func findPrevious(_ sender: Any?) {
+        runFind(backwards: true)
+    }
+
+    @objc func increaseFontSize(_ sender: Any?) {
+        fontScale = min(fontScale + 0.08, 1.4)
+        applyFontScale()
+    }
+
+    @objc func decreaseFontSize(_ sender: Any?) {
+        fontScale = max(fontScale - 0.08, 0.82)
+        applyFontScale()
+    }
+
+    private func runFind(backwards: Bool) {
+        let query = searchField.stringValue
+        guard !query.isEmpty else { return }
+        let escaped = query
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: " ")
+        webView.evaluateJavaScript("window.find('\(escaped)', false, \(backwards ? "true" : "false"), true, false, true, false);")
+    }
+
+    private func applyFontScale() {
+        webView.evaluateJavaScript("document.documentElement.style.setProperty('--font-scale', '\(fontScale)');")
     }
 
     private func updateStatus() {
@@ -428,10 +529,10 @@ final class MarkdownRenderer {
     }
 
     func render(_ markdown: String, title: String) -> String {
-        pageHTML(title: title, body: markdownToHTML(markdown))
+        pageHTML(title: title, body: markdownToHTML(markdown), tableOfContents: tableOfContentsHTML(markdown))
     }
 
-    private func pageHTML(title: String, body: String) -> String {
+    private func pageHTML(title: String, body: String, tableOfContents: String = "") -> String {
         """
         <!doctype html>
         <html>
@@ -442,6 +543,7 @@ final class MarkdownRenderer {
           <style>
             :root {
               color-scheme: light dark;
+              --font-scale: 1;
               --bg: #fbfcfe;
               --fg: #1d2433;
               --muted: #667085;
@@ -468,13 +570,52 @@ final class MarkdownRenderer {
               background: var(--bg);
               color: var(--fg);
               font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-              font-size: 16px;
+              font-size: calc(16px * var(--font-scale));
               line-height: 1.72;
             }
             main {
               max-width: 820px;
               margin: 0 auto;
               padding: 40px 48px 72px;
+            }
+            .toc-panel {
+              position: fixed;
+              top: 92px;
+              right: 22px;
+              width: 220px;
+              max-height: calc(100vh - 124px);
+              overflow: auto;
+              padding: 12px 14px;
+              border: 1px solid var(--border);
+              border-radius: 8px;
+              background: color-mix(in srgb, var(--bg) 92%, transparent);
+              backdrop-filter: blur(18px);
+              box-sizing: border-box;
+            }
+            .toc-title {
+              color: var(--muted);
+              font-size: 0.76rem;
+              font-weight: 700;
+              margin-bottom: 8px;
+            }
+            .toc-panel a {
+              display: block;
+              color: var(--muted);
+              text-decoration: none;
+              font-size: 0.82rem;
+              line-height: 1.35;
+              padding: 4px 0;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+            .toc-panel a:hover {
+              color: var(--link);
+            }
+            .toc-level-2 { padding-left: 10px !important; }
+            .toc-level-3, .toc-level-4, .toc-level-5, .toc-level-6 { padding-left: 20px !important; }
+            @media (max-width: 1180px) {
+              .toc-panel { display: none; }
             }
             .welcome {
               padding-top: 18vh;
@@ -567,6 +708,7 @@ final class MarkdownRenderer {
           </style>
         </head>
         <body>
+          \(tableOfContents)
           <main>
             \(body)
           </main>
@@ -579,6 +721,7 @@ final class MarkdownRenderer {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         var index = 0
+        var headingIndex = 0
         var output: [String] = []
 
         while index < lines.count {
@@ -613,7 +756,7 @@ final class MarkdownRenderer {
                 continue
             }
 
-            if let heading = headingHTML(for: trimmed) {
+            if let heading = headingHTML(for: trimmed, index: &headingIndex) {
                 output.append(heading)
                 index += 1
                 continue
@@ -669,11 +812,35 @@ final class MarkdownRenderer {
         return output.joined(separator: "\n")
     }
 
-    private func headingHTML(for line: String) -> String? {
+    private func tableOfContentsHTML(_ markdown: String) -> String {
+        let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        var headingIndex = 0
+        var links: [String] = []
+
+        for line in normalized.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let hashes = trimmed.prefix { $0 == "#" }.count
+            guard (1...6).contains(hashes), trimmed.dropFirst(hashes).first == " " else { continue }
+            headingIndex += 1
+            let text = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+            links.append("<a class=\"toc-level-\(hashes)\" href=\"#heading-\(headingIndex)\">\(escapeHTML(text))</a>")
+        }
+
+        guard !links.isEmpty else { return "" }
+        return """
+        <aside class="toc-panel">
+          <div class="toc-title">目录</div>
+          \(links.joined(separator: "\n"))
+        </aside>
+        """
+    }
+
+    private func headingHTML(for line: String, index: inout Int) -> String? {
         let hashes = line.prefix { $0 == "#" }.count
         guard (1...6).contains(hashes), line.dropFirst(hashes).first == " " else { return nil }
+        index += 1
         let text = line.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
-        return "<h\(hashes)>\(inlineHTML(text))</h\(hashes)>"
+        return "<h\(hashes) id=\"heading-\(index)\">\(inlineHTML(text))</h\(hashes)>"
     }
 
     private func isBlockStart(_ lines: [String], at index: Int) -> Bool {

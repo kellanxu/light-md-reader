@@ -19,6 +19,8 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 cp ".build/$BUILD_CONFIG/LightMDReader" "$MACOS_DIR/LightMDReader"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+cp "$ROOT_DIR/Assets/MarkdownDocument.icns" "$RESOURCES_DIR/MarkdownDocument.icns"
+cp "$ROOT_DIR/Assets/EditMode.icns" "$RESOURCES_DIR/EditMode.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -107,6 +109,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
       <string>Markdown Document</string>
       <key>CFBundleTypeRole</key>
       <string>Editor</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>MarkdownDocument</string>
       <key>LSHandlerRank</key>
       <string>Owner</string>
       <key>LSItemContentTypes</key>

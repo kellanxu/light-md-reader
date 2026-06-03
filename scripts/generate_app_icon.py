@@ -5,8 +5,12 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "Assets"
-ICONSET = ASSETS / "AppIcon.iconset"
-ICNS = ASSETS / "AppIcon.icns"
+APP_ICONSET = ASSETS / "AppIcon.iconset"
+APP_ICNS = ASSETS / "AppIcon.icns"
+DOCUMENT_ICONSET = ASSETS / "MarkdownDocument.iconset"
+DOCUMENT_ICNS = ASSETS / "MarkdownDocument.icns"
+EDIT_ICONSET = ASSETS / "EditMode.iconset"
+EDIT_ICNS = ASSETS / "EditMode.icns"
 
 SIZES = [
     (16, "icon_16x16.png"),
@@ -26,7 +30,7 @@ def rounded_rectangle(draw, box, radius, fill, outline=None, width=1):
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def make_icon(size):
+def make_icon(size, mode="app"):
     scale = size / 1024
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -69,12 +73,13 @@ def make_icon(size):
     )
 
     blue = (31, 111, 235, 255)
+    green = (19, 163, 127, 255)
     ink = (27, 40, 61, 255)
     muted = (128, 143, 164, 255)
     draw.rounded_rectangle(
         [int(286 * scale), int(270 * scale), int(420 * scale), int(404 * scale)],
         radius=int(28 * scale),
-        fill=blue,
+        fill=green if mode == "edit" else blue,
     )
     line_width = max(4, int(14 * scale))
     for x in (336, 370):
@@ -97,16 +102,52 @@ def make_icon(size):
             fill=ink if y in (488, 664) else muted,
         )
 
+    if mode == "edit":
+        draw.line(
+            [int(574 * scale), int(706 * scale), int(756 * scale), int(524 * scale)],
+            fill=(245, 178, 65, 255),
+            width=max(8, int(42 * scale)),
+        )
+        draw.line(
+            [int(606 * scale), int(738 * scale), int(788 * scale), int(556 * scale)],
+            fill=(119, 76, 34, 255),
+            width=max(6, int(16 * scale)),
+        )
+        draw.polygon(
+            [
+                (int(778 * scale), int(502 * scale)),
+                (int(828 * scale), int(452 * scale)),
+                (int(810 * scale), int(538 * scale)),
+            ],
+            fill=(246, 239, 212, 255),
+        )
+        draw.polygon(
+            [
+                (int(824 * scale), int(454 * scale)),
+                (int(850 * scale), int(428 * scale)),
+                (int(838 * scale), int(474 * scale)),
+            ],
+            fill=(39, 48, 65, 255),
+        )
+
     return img
+
+
+def write_iconset(iconset, icns, mode):
+    iconset.mkdir(parents=True, exist_ok=True)
+    for size, name in SIZES:
+        make_icon(size, mode=mode).save(iconset / name)
+    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(icns)], check=True)
 
 
 def main():
     ASSETS.mkdir(exist_ok=True)
-    ICONSET.mkdir(exist_ok=True)
-    for size, name in SIZES:
-        make_icon(size).save(ICONSET / name)
-    subprocess.run(["iconutil", "-c", "icns", str(ICONSET), "-o", str(ICNS)], check=True)
-    print(f"Generated {ICNS}")
+    write_iconset(APP_ICONSET, APP_ICNS, "app")
+    write_iconset(DOCUMENT_ICONSET, DOCUMENT_ICNS, "document")
+    write_iconset(EDIT_ICONSET, EDIT_ICNS, "edit")
+    print(f"Generated {APP_ICNS}")
+    print(f"Generated {DOCUMENT_ICNS}")
+    print(f"Generated {EDIT_ICNS}")
 
 
 if __name__ == "__main__":
