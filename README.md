@@ -23,11 +23,23 @@
 build/LightMD Reader.app
 ```
 
+## 本机安装并设为 Markdown 默认打开方式
+
+```bash
+./scripts/install_local.sh
+```
+
+安装完成后，App 位于：
+
+```text
+~/Applications/LightMD Reader.app
+```
+
 ## 使用
 
 - 直接运行 App 后点击「打开」选择 Markdown 文件。
 - 或将 `.md` 文件拖到 App 上打开。
-- 也可以在 Finder 中把 `.md` 文件的默认打开方式设置为 LightMD Reader，实现双击即读。
+- 安装脚本会把 `.md` 文件的默认打开方式设置为 LightMD Reader，实现双击即读。
 
 ## 产品边界
 
