@@ -24,8 +24,8 @@ def font(size, bold=False):
 
 def main():
     ASSETS.mkdir(exist_ok=True)
-    scale = 2
-    width, height = 640 * scale, 420 * scale
+    scale = 1
+    width, height = 640, 420
     img = Image.new("RGB", (width, height), "#f7f9fc")
     draw = ImageDraw.Draw(img)
 
@@ -40,7 +40,7 @@ def main():
         return int(value * scale)
 
     draw.rounded_rectangle([n(42), n(42), n(598), n(378)], radius=n(28), fill="#ffffff", outline="#d8e0eb", width=n(2))
-    draw.text((n(72), n(74)), "Install LightMD Reader", fill="#1d2433", font=font(n(28), bold=True))
+    draw.text((n(72), n(74)), "Install LightMD Reader", fill="#1d2433", font=font(n(27), bold=True))
     draw.text((n(72), n(116)), "Drag LightMD Reader to the Applications folder", fill="#667085", font=font(n(16)))
 
     draw.line([(n(250), n(246)), (n(390), n(246))], fill="#1769e0", width=n(5))
