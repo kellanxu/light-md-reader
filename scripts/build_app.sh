@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="LightMD Reader"
-BUNDLE_ID="com.kellan.light-md-reader"
+APP_NAME="LightMD"
+BUNDLE_ID="com.kellan.lightmd"
 BUILD_CONFIG="${1:-release}"
 APP_DIR="$ROOT_DIR/build/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"

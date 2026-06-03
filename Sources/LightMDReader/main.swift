@@ -2,12 +2,20 @@ import AppKit
 import UniformTypeIdentifiers
 import WebKit
 
+private let appDisplayName = "LightMD"
+private let appBundleIdentifier = "com.kellan.lightmd"
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readerWindow: ReaderWindowController?
     private var filesPendingLaunch: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+
+        if installFromDiskImageIfNeeded() {
+            return
+        }
+
         configureMenu()
 
         let controller = ReaderWindowController()
@@ -47,13 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(
-            withTitle: "关于 LightMD Reader",
+            withTitle: "关于 \(appDisplayName)",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         )
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
-            withTitle: "退出 LightMD Reader",
+            withTitle: "退出 \(appDisplayName)",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -76,6 +84,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
     }
+
+    @MainActor
+    private func installFromDiskImageIfNeeded() -> Bool {
+        let sourceURL = Bundle.main.bundleURL
+        let sourcePath = sourceURL.path
+
+        guard sourcePath.hasPrefix("/Volumes/") else {
+            return false
+        }
+
+        let targetURL = URL(fileURLWithPath: "/Applications").appendingPathComponent(sourceURL.lastPathComponent)
+        let fileManager = FileManager.default
+
+        do {
+            if fileManager.fileExists(atPath: targetURL.path) {
+                try fileManager.removeItem(at: targetURL)
+            }
+
+            try fileManager.copyItem(at: sourceURL, to: targetURL)
+            NSWorkspace.shared.open(targetURL)
+            NSApp.terminate(nil)
+            return true
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "无法自动安装 \(appDisplayName)"
+            alert.informativeText = "请把 \(appDisplayName) 拖到 Applications 后再打开。\n\n\(error.localizedDescription)"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "继续打开")
+            alert.runModal()
+            return false
+        }
+    }
 }
 
 @main
@@ -91,7 +131,7 @@ enum LightMDReaderApp {
 
 struct MarkdownDocument: Equatable {
     let url: URL
-    let content: String
+    var content: String
 
     var title: String {
         url.lastPathComponent
@@ -110,10 +150,14 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let splitView = NSSplitView()
     private let tableView = NSTableView()
     private let webView = WKWebView()
-    private let titleLabel = NSTextField(labelWithString: "LightMD Reader")
+    private let editorScrollView = NSScrollView()
+    private let editorTextView = NSTextView()
+    private let titleLabel = NSTextField(labelWithString: appDisplayName)
     private let detailLabel = NSTextField(labelWithString: "双击即读 Markdown")
     private let openButton = NSButton(title: "", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "只读")
+    private let modeControl = NSSegmentedControl(labels: ["阅读", "编辑"], trackingMode: .selectOne, target: nil, action: nil)
+    private let saveButton = NSButton(title: "保存", target: nil, action: nil)
     private let searchField = NSSearchField()
     private let previousMatchButton = NSButton(title: "", target: nil, action: nil)
     private let nextMatchButton = NSButton(title: "", target: nil, action: nil)
@@ -123,13 +167,13 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1060, height: 760),
+            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "LightMD Reader"
-        window.minSize = NSSize(width: 720, height: 480)
+        window.title = appDisplayName
+        window.minSize = NSSize(width: 920, height: 520)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
@@ -205,8 +249,11 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     }
 
     func showWelcome() {
-        titleLabel.stringValue = "LightMD Reader"
+        titleLabel.stringValue = appDisplayName
         detailLabel.stringValue = "只读 · 等待打开 Markdown"
+        editorTextView.string = ""
+        modeControl.selectedSegment = 0
+        updateMode()
         updateStatus()
         webView.loadHTMLString(renderer.welcomeHTML(), baseURL: nil)
     }
@@ -317,6 +364,21 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         titleStack.addArrangedSubview(titleLabel)
         titleStack.addArrangedSubview(detailLabel)
 
+        modeControl.selectedSegment = 0
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged(_:))
+        modeControl.controlSize = .small
+        modeControl.segmentStyle = .rounded
+        modeControl.setWidth(54, forSegment: 0)
+        modeControl.setWidth(54, forSegment: 1)
+
+        saveButton.target = self
+        saveButton.action = #selector(saveCurrentDocument(_:))
+        saveButton.bezelStyle = .rounded
+        saveButton.controlSize = .small
+        saveButton.toolTip = "保存当前 Markdown 文件"
+        saveButton.isHidden = true
+
         searchField.placeholderString = "查找"
         searchField.delegate = self
         searchField.target = self
@@ -334,7 +396,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         configureTextButton(increaseFontButton, tooltip: "放大字体")
         increaseFontButton.action = #selector(increaseFontSize(_:))
 
-        let controls = NSStackView(views: [searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton])
+        let controls = NSStackView(views: [modeControl, saveButton, searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 6
@@ -343,8 +405,20 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         header.addArrangedSubview(controls)
 
         webView.setValue(false, forKey: "drawsBackground")
+        editorTextView.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
+        editorTextView.isRichText = false
+        editorTextView.isAutomaticQuoteSubstitutionEnabled = false
+        editorTextView.isAutomaticDashSubstitutionEnabled = false
+        editorTextView.isAutomaticTextReplacementEnabled = false
+        editorTextView.allowsUndo = true
+        editorTextView.textContainerInset = NSSize(width: 28, height: 24)
+        editorScrollView.documentView = editorTextView
+        editorScrollView.hasVerticalScroller = true
+        editorScrollView.borderType = .noBorder
+        editorScrollView.isHidden = true
         reader.addArrangedSubview(header)
         reader.addArrangedSubview(webView)
+        reader.addArrangedSubview(editorScrollView)
 
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(reader)
@@ -438,13 +512,61 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
         let document = documents[index]
         titleLabel.stringValue = document.title
-        detailLabel.stringValue = "只读 · \(formattedSize(for: document.content)) · \(document.subtitle)"
+        detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: document.content)) · \(document.subtitle)"
         window?.title = document.title
         updateStatus()
+        editorTextView.string = document.content
         webView.loadHTMLString(renderer.render(document.content, title: document.title), baseURL: document.url.deletingLastPathComponent())
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
         }
+        updateMode()
+    }
+
+    @objc private func modeChanged(_ sender: NSSegmentedControl) {
+        if sender.selectedSegment == 0, let selectedIndex, documents.indices.contains(selectedIndex) {
+            let document = documents[selectedIndex]
+            webView.loadHTMLString(renderer.render(editorTextView.string, title: document.title), baseURL: document.url.deletingLastPathComponent())
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.applyFontScale()
+            }
+        }
+        updateMode()
+    }
+
+    @objc private func saveCurrentDocument(_ sender: Any?) {
+        guard let selectedIndex, documents.indices.contains(selectedIndex) else { return }
+        let content = editorTextView.string
+        let url = documents[selectedIndex].url
+
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            documents[selectedIndex].content = content
+            tableView.reloadData()
+            detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: content)) · \(documents[selectedIndex].subtitle)"
+            webView.loadHTMLString(renderer.render(content, title: documents[selectedIndex].title), baseURL: url.deletingLastPathComponent())
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.applyFontScale()
+            }
+        } catch {
+            showError("无法保存文件", detail: "\(url.lastPathComponent)\n\(error.localizedDescription)")
+        }
+    }
+
+    private func updateMode() {
+        let isEditing = modeControl.selectedSegment == 1
+        webView.isHidden = isEditing
+        editorScrollView.isHidden = !isEditing
+        saveButton.isHidden = !isEditing
+        searchField.isHidden = isEditing
+        previousMatchButton.isHidden = isEditing
+        nextMatchButton.isHidden = isEditing
+        detailLabel.stringValue = detailLabel.stringValue.replacingOccurrences(of: isEditing ? "只读" : "编辑", with: modeLabel())
+        updateStatus()
+    }
+
+    private func modeLabel() -> String {
+        modeControl.selectedSegment == 1 ? "编辑" : "只读"
     }
 
     @objc private func searchFieldChanged(_ sender: NSSearchField) {
@@ -485,9 +607,9 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
     private func updateStatus() {
         if documents.isEmpty {
-            statusLabel.stringValue = "只读 · 未打开文件"
+            statusLabel.stringValue = "\(modeLabel()) · 未打开文件"
         } else {
-            statusLabel.stringValue = "只读 · \(documents.count) 个文件"
+            statusLabel.stringValue = "\(modeLabel()) · \(documents.count) 个文件"
         }
     }
 
@@ -516,7 +638,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 final class MarkdownRenderer {
     func welcomeHTML() -> String {
         pageHTML(
-            title: "LightMD Reader",
+            title: appDisplayName,
             body: """
             <section class="welcome">
               <div class="brand-mark">#</div>
@@ -574,15 +696,15 @@ final class MarkdownRenderer {
               line-height: 1.72;
             }
             main {
-              max-width: 820px;
+              max-width: 720px;
               margin: 0 auto;
-              padding: 40px 48px 72px;
+              padding: 40px 250px 72px 48px;
             }
             .toc-panel {
               position: fixed;
               top: 92px;
-              right: 22px;
-              width: 220px;
+              right: 18px;
+              width: 210px;
               max-height: calc(100vh - 124px);
               overflow: auto;
               padding: 12px 14px;
@@ -614,8 +736,13 @@ final class MarkdownRenderer {
             }
             .toc-level-2 { padding-left: 10px !important; }
             .toc-level-3, .toc-level-4, .toc-level-5, .toc-level-6 { padding-left: 20px !important; }
-            @media (max-width: 1180px) {
-              .toc-panel { display: none; }
+            @media (max-width: 900px) {
+              main {
+                padding-right: 48px;
+              }
+              .toc-panel {
+                display: none;
+              }
             }
             .welcome {
               padding-top: 18vh;

@@ -1,4 +1,4 @@
-# LightMD Reader
+# LightMD
 
 面向 AI 工具高频用户的 Mac 轻便 Markdown 阅读器。核心目标是：双击 `.md` 文件后，直接看到渲染后的阅读视图。
 
@@ -20,7 +20,7 @@
 构建完成后，App 位于：
 
 ```text
-build/LightMD Reader.app
+build/LightMD.app
 ```
 
 ## 本机安装并设为 Markdown 默认打开方式
@@ -32,7 +32,7 @@ build/LightMD Reader.app
 安装完成后，App 位于：
 
 ```text
-~/Applications/LightMD Reader.app
+~/Applications/LightMD.app
 ```
 
 ## 生成 DMG 安装包
@@ -44,16 +44,16 @@ build/LightMD Reader.app
 构建完成后，安装包位于：
 
 ```text
-build/LightMD Reader.dmg
+build/LightMD.dmg
 ```
 
-DMG 打开后会显示拖拽安装引导：把 `LightMD Reader` 拖到 `Applications`。
+DMG 打开后会显示拖拽安装引导：把 `LightMD` 拖到 `Applications`。
 
 ## 使用
 
 - 直接运行 App 后点击「打开」选择 Markdown 文件。
 - 或将 `.md` 文件拖到 App 上打开。
-- 安装脚本会把 `.md` 文件的默认打开方式设置为 LightMD Reader，实现双击即读。
+- 安装脚本会把 `.md` 文件的默认打开方式设置为 LightMD，实现双击即读。
 
 ## 产品边界
 
