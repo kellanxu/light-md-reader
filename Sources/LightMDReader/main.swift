@@ -2,7 +2,6 @@ import AppKit
 import UniformTypeIdentifiers
 import WebKit
 
-@main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readerWindow: ReaderWindowController?
     private var filesPendingLaunch: [URL] = []
@@ -69,6 +68,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+}
+
+@main
+enum LightMDReaderApp {
+    @MainActor
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
     }
 }
 

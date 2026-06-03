@@ -102,7 +102,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
       <key>CFBundleTypeName</key>
       <string>Markdown Document</string>
       <key>CFBundleTypeRole</key>
-      <string>Viewer</string>
+      <string>Editor</string>
       <key>LSHandlerRank</key>
       <string>Owner</string>
       <key>LSItemContentTypes</key>
