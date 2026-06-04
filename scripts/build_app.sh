@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="LightMD"
 BUNDLE_ID="com.kellan.lightmd"
+DEVELOPER_NAME="Kellan / 许可"
+DEVELOPER_EMAIL="kenbot818@gmail.com"
 BUILD_CONFIG="${1:-release}"
 APP_DIR="$ROOT_DIR/build/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
@@ -21,6 +23,7 @@ cp ".build/$BUILD_CONFIG/LightMDReader" "$MACOS_DIR/LightMDReader"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 cp "$ROOT_DIR/Assets/MarkdownDocument.icns" "$RESOURCES_DIR/MarkdownDocument.icns"
 cp "$ROOT_DIR/Assets/EditMode.icns" "$RESOURCES_DIR/EditMode.icns"
+cp -R "$ROOT_DIR/Assets/Muya" "$RESOURCES_DIR/Muya"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,6 +50,12 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>© 2026 $DEVELOPER_NAME. All rights reserved.</string>
+  <key>LightMDDeveloperName</key>
+  <string>$DEVELOPER_NAME</string>
+  <key>LightMDDeveloperEmail</key>
+  <string>$DEVELOPER_EMAIL</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>

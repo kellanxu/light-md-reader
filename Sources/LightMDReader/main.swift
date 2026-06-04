@@ -4,6 +4,9 @@ import WebKit
 
 private let appDisplayName = "LightMD"
 private let appBundleIdentifier = "com.kellan.lightmd"
+private let themeDefaultsKey = "LightMD.SelectedTheme"
+private let developerDisplayName = "Kellan / 许可"
+private let developerEmail = "kenbot818@gmail.com"
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readerWindow: ReaderWindowController?
@@ -56,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(
             withTitle: "关于 \(appDisplayName)",
-            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            action: #selector(showAboutPanel(_:)),
             keyEquivalent: ""
         )
         appMenu.addItem(NSMenuItem.separator())
@@ -71,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fileMenuItem = NSMenuItem()
         let fileMenu = NSMenu(title: "文件")
         fileMenu.addItem(withTitle: "打开...", action: #selector(ReaderWindowController.openDocument(_:)), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: "保存", action: #selector(ReaderWindowController.saveCurrentDocument(_:)), keyEquivalent: "s")
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "导出为 PNG...", action: #selector(ReaderWindowController.exportAsPNG(_:)), keyEquivalent: "")
+        fileMenu.addItem(withTitle: "导出为 PDF...", action: #selector(ReaderWindowController.exportAsPDF(_:)), keyEquivalent: "")
+        fileMenu.addItem(withTitle: "导出为 HTML...", action: #selector(ReaderWindowController.exportAsHTML(_:)), keyEquivalent: "")
+        fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "关闭当前文件", action: #selector(ReaderWindowController.closeCurrentDocument(_:)), keyEquivalent: "w")
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
@@ -83,6 +92,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(viewMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @MainActor
+    @objc private func showAboutPanel(_ sender: Any?) {
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: appDisplayName,
+            .applicationVersion: "0.1.0",
+            .version: "MVP",
+            .credits: NSAttributedString(
+                string: "开发者：\(developerDisplayName)\n联系邮箱：\(developerEmail)\n© 2026 \(developerDisplayName). All rights reserved.",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12),
+                    .foregroundColor: NSColor.secondaryLabelColor
+                ]
+            )
+        ])
     }
 
     @MainActor
@@ -121,10 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 enum LightMDReaderApp {
     @MainActor
+    private static let appDelegate = AppDelegate()
+
+    @MainActor
     static func main() {
         let app = NSApplication.shared
-        let delegate = AppDelegate()
-        app.delegate = delegate
+        app.delegate = appDelegate
         app.run()
     }
 }
@@ -140,14 +167,328 @@ struct MarkdownDocument: Equatable {
     var subtitle: String {
         url.deletingLastPathComponent().path
     }
+
+    var monogram: String {
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let first = baseName.trimmingCharacters(in: .whitespacesAndNewlines).first
+        return first.map { String($0).uppercased() } ?? "M"
+    }
+}
+
+enum ReaderTheme: Int, CaseIterable {
+    case blue
+    case paper
+    case night
+
+    var label: String {
+        switch self {
+        case .blue: return "蓝"
+        case .paper: return "纸"
+        case .night: return "夜"
+        }
+    }
+
+    var htmlValue: String {
+        switch self {
+        case .blue: return "blue"
+        case .paper: return "paper"
+        case .night: return "night"
+        }
+    }
+
+    var accentColor: NSColor {
+        switch self {
+        case .blue: return .systemBlue
+        case .paper: return NSColor(calibratedRed: 0.65, green: 0.36, blue: 0.08, alpha: 1)
+        case .night: return NSColor(calibratedRed: 0.34, green: 0.55, blue: 0.95, alpha: 1)
+        }
+    }
+
+    var windowAppearance: NSAppearance? {
+        switch self {
+        case .blue: return nil
+        case .paper: return NSAppearance(named: .aqua)
+        case .night: return NSAppearance(named: .darkAqua)
+        }
+    }
+
+    var readerBackgroundColor: NSColor {
+        switch self {
+        case .blue: return NSColor(calibratedRed: 0.985, green: 0.99, blue: 0.998, alpha: 1)
+        case .paper: return NSColor(calibratedRed: 0.985, green: 0.968, blue: 0.935, alpha: 1)
+        case .night: return NSColor(calibratedRed: 0.122, green: 0.133, blue: 0.157, alpha: 1)
+        }
+    }
+
+    var sidebarBaseColor: NSColor {
+        switch self {
+        case .blue: return NSColor(calibratedWhite: 0.88, alpha: 1)
+        case .paper: return NSColor(calibratedWhite: 0.86, alpha: 1)
+        case .night: return NSColor(calibratedWhite: 0.17, alpha: 1)
+        }
+    }
+}
+
+final class MonogramIconView: NSView {
+    var text: String = "" {
+        didSet { needsDisplay = true }
+    }
+
+    var fillColor: NSColor = .systemBlue {
+        didSet { needsDisplay = true }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 26, height: 26)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let rect = bounds.integral.insetBy(dx: 0.5, dy: 0.5)
+        fillColor.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+            .foregroundColor: NSColor.white,
+            .paragraphStyle: paragraphStyle
+        ]
+        let attributed = NSAttributedString(string: text, attributes: attributes)
+        let size = attributed.size()
+        let drawRect = NSRect(
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2 - 0.5,
+            width: size.width,
+            height: size.height
+        )
+        attributed.draw(in: drawRect)
+    }
+}
+
+final class RoundedReaderView: NSView {
+    var fillColor: NSColor = .windowBackgroundColor {
+        didSet {
+            layer?.backgroundColor = fillColor.cgColor
+            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.38).cgColor
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = fillColor.cgColor
+        layer?.cornerRadius = 28
+        layer?.cornerCurve = .continuous
+        layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        layer?.borderWidth = 0.5
+        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.38).cgColor
+        layer?.masksToBounds = true
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+}
+
+private enum ExportFormat {
+    case png
+    case pdf
+    case html
+
+    var title: String {
+        switch self {
+        case .png: return "导出为 PNG"
+        case .pdf: return "导出为 PDF"
+        case .html: return "导出为 HTML"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .png: return "png"
+        case .pdf: return "pdf"
+        case .html: return "html"
+        }
+    }
+
+    var contentType: UTType {
+        switch self {
+        case .png: return .png
+        case .pdf: return .pdf
+        case .html: return .html
+        }
+    }
+}
+
+private final class RenderExportSession: NSObject, WKNavigationDelegate {
+    private let html: String
+    private let baseURL: URL
+    private let destinationURL: URL
+    private let format: ExportFormat
+    private let completion: (Result<Void, Error>) -> Void
+    private let webView: WKWebView
+    private let renderWindow: NSWindow
+    private var didComplete = false
+
+    init(html: String, baseURL: URL, destinationURL: URL, format: ExportFormat, completion: @escaping (Result<Void, Error>) -> Void) {
+        self.html = html
+        self.baseURL = baseURL
+        self.destinationURL = destinationURL
+        self.format = format
+        self.completion = completion
+        self.webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 980, height: 700))
+        self.renderWindow = NSWindow(
+            contentRect: NSRect(x: -12000, y: -12000, width: 980, height: 700),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+        webView.navigationDelegate = self
+        webView.setValue(false, forKey: "drawsBackground")
+        renderWindow.contentView = webView
+    }
+
+    func start() {
+        renderWindow.orderBack(nil)
+        webView.loadHTMLString(html, baseURL: baseURL)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        let script = """
+        (() => {
+          document.body.classList.remove('editing');
+          const width = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, 980);
+          const height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 700);
+          return { width, height };
+        })();
+        """
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            guard let self else { return }
+            if let error {
+                self.finish(.failure(error))
+                return
+            }
+
+            let size = self.exportSize(from: result)
+            self.webView.frame = NSRect(origin: .zero, size: size)
+            self.renderWindow.setFrame(NSRect(x: -12000, y: -12000, width: size.width, height: size.height), display: true)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                self.writeExport(size: size)
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        finish(.failure(error))
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        finish(.failure(error))
+    }
+
+    private func exportSize(from result: Any?) -> NSSize {
+        let dictionary = result as? [String: Any]
+        let width = number(dictionary?["width"], fallback: 980)
+        let height = number(dictionary?["height"], fallback: 700)
+        return NSSize(
+            width: min(max(width, 980), 2400),
+            height: min(max(height, 700), 30000)
+        )
+    }
+
+    private func number(_ value: Any?, fallback: CGFloat) -> CGFloat {
+        if let number = value as? NSNumber {
+            return CGFloat(truncating: number)
+        }
+        if let value = value as? CGFloat {
+            return value
+        }
+        if let value = value as? Double {
+            return CGFloat(value)
+        }
+        return fallback
+    }
+
+    private func writeExport(size: NSSize) {
+        switch format {
+        case .png:
+            let configuration = WKSnapshotConfiguration()
+            configuration.rect = NSRect(origin: .zero, size: size)
+            webView.takeSnapshot(with: configuration) { [weak self] image, error in
+                guard let self else { return }
+                if let error {
+                    self.finish(.failure(error))
+                    return
+                }
+                guard let image,
+                      let tiffData = image.tiffRepresentation,
+                      let bitmap = NSBitmapImageRep(data: tiffData),
+                      let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                    self.finish(.failure(Self.error("无法生成 PNG 图片。")))
+                    return
+                }
+
+                do {
+                    try pngData.write(to: self.destinationURL)
+                    self.finish(.success(()))
+                } catch {
+                    self.finish(.failure(error))
+                }
+            }
+
+        case .pdf:
+            if #available(macOS 11.0, *) {
+                let configuration = WKPDFConfiguration()
+                configuration.rect = NSRect(origin: .zero, size: size)
+                webView.createPDF(configuration: configuration) { [weak self] result in
+                    guard let self else { return }
+                    switch result {
+                    case .success(let data):
+                        do {
+                            try data.write(to: self.destinationURL)
+                            self.finish(.success(()))
+                        } catch {
+                            self.finish(.failure(error))
+                        }
+                    case .failure(let error):
+                        self.finish(.failure(error))
+                    }
+                }
+            } else {
+                finish(.failure(Self.error("当前 macOS 版本不支持 PDF 导出。")))
+            }
+
+        case .html:
+            finish(.failure(Self.error("HTML 导出不需要渲染会话。")))
+        }
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        guard !didComplete else { return }
+        didComplete = true
+        renderWindow.orderOut(nil)
+        completion(result)
+    }
+
+    private static func error(_ message: String) -> NSError {
+        NSError(domain: "LightMD.Export", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
 }
 
 final class ReaderWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     private let renderer = MarkdownRenderer()
     private var documents: [MarkdownDocument] = []
     private var selectedIndex: Int?
+    private var currentTheme: ReaderTheme = ReaderTheme(rawValue: UserDefaults.standard.integer(forKey: themeDefaultsKey)) ?? .blue
 
-    private let splitView = NSSplitView()
+    private let sidebarWidth: CGFloat = 240
+    private let readerOverlap: CGFloat = 22
+    private let readerContainer = RoundedReaderView()
     private let tableView = NSTableView()
     private let webView = WKWebView()
     private let titleLabel = NSTextField(labelWithString: appDisplayName)
@@ -161,12 +502,16 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let nextMatchButton = NSButton(title: "", target: nil, action: nil)
     private let decreaseFontButton = NSButton(title: "A-", target: nil, action: nil)
     private let increaseFontButton = NSButton(title: "A+", target: nil, action: nil)
+    private let exportButton = NSPopUpButton()
+    private let themeControl = NSSegmentedControl(labels: ReaderTheme.allCases.map(\.label), trackingMode: .selectOne, target: nil, action: nil)
     private var fontScale = 1.0
+    private var keyMonitor: Any?
+    private var exportSessions: [RenderExportSession] = []
 
     init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1180, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -175,8 +520,10 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
+        window.appearance = currentTheme.windowAppearance
         super.init(window: window)
         setupUI()
+        installKeyboardShortcuts()
     }
 
     required init?(coder: NSCoder) {
@@ -252,30 +599,20 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         modeControl.selectedSegment = 0
         updateMode()
         updateStatus()
-        webView.loadHTMLString(renderer.welcomeHTML(), baseURL: nil)
+        webView.loadHTMLString(renderer.welcomeHTML(theme: currentTheme), baseURL: nil)
     }
 
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        splitView.translatesAutoresizingMaskIntoConstraints = false
-        splitView.isVertical = true
-        splitView.dividerStyle = .thin
-        contentView.addSubview(splitView)
-
-        NSLayoutConstraint.activate([
-            splitView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            splitView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            splitView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            splitView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = currentTheme.sidebarBaseColor.cgColor
 
         let sidebar = NSVisualEffectView()
         sidebar.material = .sidebar
         sidebar.blendingMode = .behindWindow
         sidebar.state = .active
         sidebar.translatesAutoresizingMaskIntoConstraints = false
-        sidebar.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
 
         let sidebarHeader = NSStackView()
         sidebarHeader.orientation = .horizontal
@@ -324,16 +661,19 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         sidebar.addSubview(statusLabel)
         NSLayoutConstraint.activate([
             sidebarHeader.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            sidebarHeader.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            sidebarHeader.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            sidebarHeader.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -readerOverlap),
+            sidebarHeader.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 46),
             scrollView.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -readerOverlap),
             scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor),
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -8),
             statusLabel.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
-            statusLabel.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            statusLabel.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12 - readerOverlap),
             statusLabel.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -12)
         ])
+
+        readerContainer.translatesAutoresizingMaskIntoConstraints = false
+        readerContainer.fillColor = currentTheme.readerBackgroundColor
 
         let reader = NSStackView()
         reader.orientation = .vertical
@@ -344,8 +684,9 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 14
-        header.edgeInsets = NSEdgeInsets(top: 16, left: 24, bottom: 12, right: 24)
+        header.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 8, right: 24)
         header.translatesAutoresizingMaskIntoConstraints = false
+        header.heightAnchor.constraint(equalToConstant: 72).isActive = true
 
         let titleStack = NSStackView()
         titleStack.orientation = .vertical
@@ -393,7 +734,27 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         configureTextButton(increaseFontButton, tooltip: "放大字体")
         increaseFontButton.action = #selector(increaseFontSize(_:))
 
-        let controls = NSStackView(views: [modeControl, saveButton, searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton])
+        exportButton.pullsDown = true
+        exportButton.bezelStyle = .rounded
+        exportButton.controlSize = .small
+        exportButton.toolTip = "导出当前文档"
+        exportButton.menu = NSMenu()
+        exportButton.menu?.addItem(withTitle: "导出", action: nil, keyEquivalent: "")
+        exportButton.menu?.addItem(withTitle: "PNG", action: #selector(exportAsPNG(_:)), keyEquivalent: "")
+        exportButton.menu?.addItem(withTitle: "PDF", action: #selector(exportAsPDF(_:)), keyEquivalent: "")
+        exportButton.menu?.addItem(withTitle: "HTML", action: #selector(exportAsHTML(_:)), keyEquivalent: "")
+        exportButton.menu?.items.forEach { $0.target = self }
+
+        themeControl.selectedSegment = currentTheme.rawValue
+        themeControl.target = self
+        themeControl.action = #selector(themeChanged(_:))
+        themeControl.controlSize = .small
+        themeControl.segmentStyle = .rounded
+        for index in ReaderTheme.allCases.indices {
+            themeControl.setWidth(34, forSegment: index)
+        }
+
+        let controls = NSStackView(views: [modeControl, saveButton, searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton, exportButton, themeControl])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 6
@@ -401,15 +762,49 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         header.addArrangedSubview(titleStack)
         header.addArrangedSubview(controls)
 
+        let contentSeparator = NSBox()
+        contentSeparator.boxType = .separator
+        contentSeparator.translatesAutoresizingMaskIntoConstraints = false
+
         webView.setValue(false, forKey: "drawsBackground")
         reader.addArrangedSubview(header)
+        reader.addArrangedSubview(contentSeparator)
         reader.addArrangedSubview(webView)
+        readerContainer.addSubview(reader)
+        NSLayoutConstraint.activate([
+            reader.leadingAnchor.constraint(equalTo: readerContainer.leadingAnchor),
+            reader.trailingAnchor.constraint(equalTo: readerContainer.trailingAnchor),
+            reader.topAnchor.constraint(equalTo: readerContainer.topAnchor),
+            reader.bottomAnchor.constraint(equalTo: readerContainer.bottomAnchor)
+        ])
 
-        splitView.addArrangedSubview(sidebar)
-        splitView.addArrangedSubview(reader)
-        splitView.setPosition(240, ofDividerAt: 0)
+        contentView.addSubview(sidebar)
+        contentView.addSubview(readerContainer)
+
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: contentView.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth),
+            readerContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: sidebarWidth - readerOverlap),
+            readerContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            readerContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
+            readerContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
 
         window?.center()
+    }
+
+    private func installKeyboardShortcuts() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+                  event.charactersIgnoringModifiers?.lowercased() == "s" else {
+                return event
+            }
+            self.saveCurrentDocument(nil)
+            return nil
+        }
     }
 
     private func configureIconButton(_ button: NSButton, symbol: String, tooltip: String) {
@@ -442,13 +837,9 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
         cell.subviews.forEach { $0.removeFromSuperview() }
 
-        let icon = NSTextField(labelWithString: "#")
-        icon.font = .systemFont(ofSize: 13, weight: .bold)
-        icon.textColor = .white
-        icon.alignment = .center
-        icon.wantsLayer = true
-        icon.layer?.backgroundColor = NSColor.systemBlue.cgColor
-        icon.layer?.cornerRadius = 6
+        let icon = MonogramIconView()
+        icon.text = documents[row].monogram
+        icon.fillColor = currentTheme.accentColor
         icon.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             icon.widthAnchor.constraint(equalToConstant: 26),
@@ -500,7 +891,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: document.content)) · \(document.subtitle)"
         window?.title = document.title
         updateStatus()
-        webView.loadHTMLString(renderer.render(document.content, title: document.title), baseURL: document.url.deletingLastPathComponent())
+        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: currentTheme), baseURL: document.url.deletingLastPathComponent())
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
             self?.updateMode()
@@ -512,7 +903,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         updateMode()
     }
 
-    @objc private func saveCurrentDocument(_ sender: Any?) {
+    @objc func saveCurrentDocument(_ sender: Any?) {
         guard let selectedIndex, documents.indices.contains(selectedIndex) else { return }
         let url = documents[selectedIndex].url
 
@@ -532,7 +923,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
                 self.documents[selectedIndex].content = content
                 self.tableView.reloadData()
                 self.detailLabel.stringValue = "\(self.modeLabel()) · \(self.formattedSize(for: content)) · \(self.documents[selectedIndex].subtitle)"
-                self.webView.loadHTMLString(self.renderer.render(content, title: self.documents[selectedIndex].title), baseURL: url.deletingLastPathComponent())
+                self.webView.loadHTMLString(self.renderer.render(content, title: self.documents[selectedIndex].title, theme: self.currentTheme), baseURL: url.deletingLastPathComponent())
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                     self?.applyFontScale()
                     self?.updateMode()
@@ -540,6 +931,105 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             } catch {
                 self.showError("无法保存文件", detail: "\(url.lastPathComponent)\n\(error.localizedDescription)")
             }
+        }
+    }
+
+    @objc func exportAsPNG(_ sender: Any?) {
+        exportCurrentDocument(as: .png)
+    }
+
+    @objc func exportAsPDF(_ sender: Any?) {
+        exportCurrentDocument(as: .pdf)
+    }
+
+    @objc func exportAsHTML(_ sender: Any?) {
+        exportCurrentDocument(as: .html)
+    }
+
+    private func exportCurrentDocument(as format: ExportFormat) {
+        guard let selectedIndex, documents.indices.contains(selectedIndex) else {
+            showError("无法导出", detail: "请先打开一个 Markdown 文件。")
+            return
+        }
+
+        let document = documents[selectedIndex]
+        let panel = NSSavePanel()
+        panel.title = format.title
+        panel.allowedContentTypes = [format.contentType]
+        panel.nameFieldStringValue = document.url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
+        panel.canCreateDirectories = true
+
+        panel.beginSheetModal(for: window!) { [weak self] response in
+            guard response == .OK, let destinationURL = panel.url else { return }
+            self?.export(document: document, to: destinationURL, as: format)
+        }
+    }
+
+    private func export(document: MarkdownDocument, to destinationURL: URL, as format: ExportFormat) {
+        currentMarkdown { [weak self] markdown in
+            guard let self else { return }
+            let html = self.renderer.render(markdown, title: document.title, theme: self.currentTheme)
+
+            if format == .html {
+                do {
+                    try html.write(to: destinationURL, atomically: true, encoding: .utf8)
+                    self.showExportSuccess(destinationURL)
+                } catch {
+                    self.showError("导出失败", detail: error.localizedDescription)
+                }
+                return
+            }
+
+            var session: RenderExportSession?
+            session = RenderExportSession(
+                html: html,
+                baseURL: document.url.deletingLastPathComponent(),
+                destinationURL: destinationURL,
+                format: format
+            ) { [weak self, weak session] result in
+                guard let self else { return }
+                if let session {
+                    self.exportSessions.removeAll { $0 === session }
+                }
+
+                switch result {
+                case .success:
+                    self.showExportSuccess(destinationURL)
+                case .failure(let error):
+                    self.showError("导出失败", detail: error.localizedDescription)
+                }
+            }
+
+            if let session {
+                self.exportSessions.append(session)
+                session.start()
+            }
+        }
+    }
+
+    private func currentMarkdown(completion: @escaping (String) -> Void) {
+        guard let selectedIndex, documents.indices.contains(selectedIndex) else {
+            completion("")
+            return
+        }
+
+        webView.evaluateJavaScript("window.lightMDExportMarkdown && window.lightMDExportMarkdown();") { [weak self] result, _ in
+            guard let self else { return }
+            let fallback = self.documents[selectedIndex].content
+            let markdown = (result as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+            completion(markdown)
+        }
+    }
+
+    private func showExportSuccess(_ url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "导出完成"
+        alert.informativeText = url.path
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: "在 Finder 中显示")
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
 
@@ -552,6 +1042,31 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         webView.evaluateJavaScript("window.lightMDSetEditing && window.lightMDSetEditing(\(isEditing ? "true" : "false"));")
         detailLabel.stringValue = detailLabel.stringValue.replacingOccurrences(of: isEditing ? "只读" : "编辑", with: modeLabel())
         updateStatus()
+    }
+
+    @objc private func themeChanged(_ sender: NSSegmentedControl) {
+        guard let theme = ReaderTheme(rawValue: sender.selectedSegment) else { return }
+        currentTheme = theme
+        UserDefaults.standard.set(theme.rawValue, forKey: themeDefaultsKey)
+        window?.appearance = theme.windowAppearance
+        window?.contentView?.layer?.backgroundColor = theme.sidebarBaseColor.cgColor
+        readerContainer.fillColor = theme.readerBackgroundColor
+        tableView.reloadData()
+        reloadCurrentDocument()
+    }
+
+    private func reloadCurrentDocument() {
+        guard let selectedIndex, documents.indices.contains(selectedIndex) else {
+            webView.loadHTMLString(renderer.welcomeHTML(theme: currentTheme), baseURL: nil)
+            return
+        }
+
+        let document = documents[selectedIndex]
+        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: currentTheme), baseURL: document.url.deletingLastPathComponent())
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.applyFontScale()
+            self?.updateMode()
+        }
     }
 
     private func modeLabel() -> String {
@@ -625,7 +1140,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 }
 
 final class MarkdownRenderer {
-    func welcomeHTML() -> String {
+    func welcomeHTML(theme: ReaderTheme) -> String {
         pageHTML(
             title: appDisplayName,
             body: """
@@ -635,23 +1150,31 @@ final class MarkdownRenderer {
               <p>为 AI 工具生成的临时文档准备的轻便阅读视图。</p>
               <p class="muted">只读预览 · 本地文件 · 不建知识库</p>
             </section>
-            """
+            """,
+            theme: theme
         )
     }
 
-    func render(_ markdown: String, title: String) -> String {
-        pageHTML(title: title, body: markdownToHTML(markdown), tableOfContents: tableOfContentsHTML(markdown))
+    func render(_ markdown: String, title: String, theme: ReaderTheme) -> String {
+        pageHTML(
+            title: title,
+            body: markdownToHTML(markdown),
+            tableOfContents: tableOfContentsHTML(markdown),
+            sourceMarkdown: markdown,
+            theme: theme
+        )
     }
 
-    private func pageHTML(title: String, body: String, tableOfContents: String = "") -> String {
+    private func pageHTML(title: String, body: String, tableOfContents: String = "", sourceMarkdown: String = "", theme: ReaderTheme) -> String {
         """
         <!doctype html>
-        <html>
+        <html data-theme="\(theme.htmlValue)">
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>\(escapeHTML(title))</title>
           <style>
+            \(muyaCSS())
             :root {
               color-scheme: light dark;
               --font-scale: 1;
@@ -662,10 +1185,35 @@ final class MarkdownRenderer {
               --code-bg: #f2f5f9;
               --quote-bg: #f4f8fb;
               --link: #1769e0;
-              --accent: #13a37f;
+              --accent: #1769e0;
+              --focus-ring: color-mix(in srgb, var(--link) 34%, transparent);
+            }
+            html[data-theme="paper"] {
+              color-scheme: light;
+              --bg: #fbf7ef;
+              --fg: #2d251c;
+              --muted: #7a6c5d;
+              --border: #ded2bf;
+              --code-bg: #f1e8d8;
+              --quote-bg: #f5ecdf;
+              --link: #a35b11;
+              --accent: #a35b11;
+              --focus-ring: rgba(163, 91, 17, 0.24);
+            }
+            html[data-theme="night"] {
+              color-scheme: dark;
+              --bg: #1f2228;
+              --fg: #edf1f7;
+              --muted: #a8b1c1;
+              --border: #3a4250;
+              --code-bg: #292f38;
+              --quote-bg: #252d35;
+              --link: #8bb8ff;
+              --accent: #8bb8ff;
+              --focus-ring: rgba(139, 184, 255, 0.28);
             }
             @media (prefers-color-scheme: dark) {
-              :root {
+              html[data-theme="blue"] {
                 --bg: #1f2228;
                 --fg: #edf1f7;
                 --muted: #a8b1c1;
@@ -673,7 +1221,7 @@ final class MarkdownRenderer {
                 --code-bg: #292f38;
                 --quote-bg: #252d35;
                 --link: #8bb8ff;
-                --accent: #4fc3a1;
+                --accent: #8bb8ff;
               }
             }
             body {
@@ -687,21 +1235,42 @@ final class MarkdownRenderer {
             main {
               max-width: 720px;
               margin: 0 auto;
-              padding: 40px 250px 72px 48px;
+              padding: 40px 76px 72px 48px;
             }
             .toc-panel {
               position: fixed;
               top: 92px;
-              right: 18px;
+              right: 0;
               width: 210px;
               max-height: calc(100vh - 124px);
               overflow: auto;
-              padding: 12px 14px;
+              padding: 12px 14px 12px 18px;
               border: 1px solid var(--border);
+              border-right: 0;
               border-radius: 8px;
               background: color-mix(in srgb, var(--bg) 92%, transparent);
               backdrop-filter: blur(18px);
               box-sizing: border-box;
+              box-shadow: 0 12px 30px rgba(16, 24, 40, 0.08);
+              transform: translateX(196px);
+              opacity: 0.68;
+              transition: transform 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
+            }
+            .toc-panel::before {
+              content: "";
+              position: absolute;
+              top: 14px;
+              left: 0;
+              width: 4px;
+              height: calc(100% - 28px);
+              border-radius: 99px;
+              background: var(--link);
+            }
+            .toc-panel:hover,
+            .toc-panel:focus-within {
+              transform: translateX(0);
+              opacity: 1;
+              box-shadow: 0 16px 40px rgba(16, 24, 40, 0.14);
             }
             .toc-panel a {
               display: block;
@@ -816,27 +1385,135 @@ final class MarkdownRenderer {
               color: var(--muted);
             }
             body.editing main {
-              outline: 2px solid color-mix(in srgb, var(--link) 34%, transparent);
-              outline-offset: -18px;
-              border-radius: 12px;
-            }
-            body.editing main:focus {
-              outline-color: color-mix(in srgb, var(--link) 58%, transparent);
+              display: none;
             }
             body.editing .toc-panel {
-              pointer-events: none;
-              opacity: 0.42;
+              display: none;
+            }
+            #lightmd-source {
+              display: none;
+            }
+            .editor-shell {
+              display: none;
+              box-sizing: border-box;
+              width: 100%;
+              min-height: calc(100vh - 92px);
+              margin: 0;
+              padding: 0;
+              border: 0;
+              overflow-x: hidden;
+              overflow-y: auto;
+              background: var(--bg);
+              box-shadow: none;
+            }
+            body.editing .editor-shell {
+              display: block;
+            }
+            #lightmd-editor {
+              box-sizing: border-box;
+              width: min(860px, calc(100% - 96px));
+              min-height: calc(100vh - 92px);
+              margin: 0 auto;
+              padding: 38px 0 72px;
+              color: var(--fg);
+              caret-color: var(--link);
+              --editor-bg-color: var(--bg);
+              --editor-color: var(--fg);
+              --editor-border-color: var(--border);
+              --editor-primary-color: var(--link);
+              --editor-select-bg-color: var(--focus-ring);
+            }
+            #lightmd-editor,
+            #lightmd-editor * {
+              font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+              letter-spacing: 0;
+            }
+            #lightmd-editor .ag-front-menu,
+            #lightmd-editor .mu-front-menu,
+            #lightmd-editor .mu-quick-insert,
+            #lightmd-editor .ag-tool-bar,
+            #lightmd-editor .mu-tool-bar {
+              font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            }
+            #lightmd-editor h1,
+            #lightmd-editor h2,
+            #lightmd-editor h3,
+            #lightmd-editor h4,
+            #lightmd-editor h5,
+            #lightmd-editor h6 {
+              color: var(--fg);
+              line-height: 1.28;
+              border: 0;
+            }
+            #lightmd-editor h1 { font-size: calc(2.08rem * var(--font-scale)); }
+            #lightmd-editor h2 {
+              font-size: calc(1.55rem * var(--font-scale));
+              border-bottom: 1px solid var(--border);
+              padding-bottom: 0.25em;
+            }
+            #lightmd-editor h3 { font-size: calc(1.25rem * var(--font-scale)); }
+            #lightmd-editor p,
+            #lightmd-editor li,
+            #lightmd-editor blockquote,
+            #lightmd-editor table {
+              font-size: calc(16px * var(--font-scale));
+              line-height: 1.72;
+              color: var(--fg);
+            }
+            #lightmd-editor blockquote {
+              border-left-color: var(--accent);
+              background: var(--quote-bg);
+            }
+            #lightmd-editor pre,
+            #lightmd-editor code {
+              font-family: "SF Mono", Menlo, Consolas, monospace;
+              background: var(--code-bg);
+              color: var(--fg);
+            }
+            #lightmd-editor a {
+              color: var(--link);
+            }
+            #lightmd-editor [contenteditable="true"]:focus {
+              outline: 0;
             }
           </style>
+          \(muyaScriptTag())
           <script>
             function lightMDSetEditing(enabled) {
               const main = document.querySelector('main');
+              const source = document.querySelector('#lightmd-source');
               if (!main) return;
               document.body.classList.toggle('editing', enabled);
-              main.contentEditable = enabled ? 'true' : 'false';
               if (enabled) {
-                main.focus();
+                const editor = lightMDEnsureEditor();
+                if (editor) editor.focus();
+              } else if (window.lightMDMuya) {
+                source.value = lightMDGetEditorMarkdown();
               }
+            }
+
+            function lightMDEnsureEditor() {
+              if (window.lightMDMuya) return window.lightMDMuya;
+              const container = document.querySelector('#lightmd-editor');
+              const source = document.querySelector('#lightmd-source');
+              const Muya = window.LightMDMuya;
+              if (!container || !source || !Muya) return null;
+              window.lightMDMuya = new Muya(container, {});
+              window.lightMDMuya.init();
+              window.lightMDMuya.setContent(source.value || '');
+              window.lightMDMuya.on && window.lightMDMuya.on('change', () => {
+                source.value = lightMDGetEditorMarkdown();
+              });
+              window.setTimeout(() => window.lightMDMuya && window.lightMDMuya.focus(), 0);
+              return window.lightMDMuya;
+            }
+
+            function lightMDGetEditorMarkdown() {
+              if (!window.lightMDMuya) return '';
+              if (typeof window.lightMDMuya.getMarkdown === 'function') {
+                return window.lightMDMuya.getMarkdown();
+              }
+              return '';
             }
 
             function lightMDEscape(text) {
@@ -861,7 +1538,10 @@ final class MarkdownRenderer {
               const tag = node.tagName.toLowerCase();
               const inline = () => lightMDInline(node).trim();
               if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + inline();
-              if (tag === 'p') return inline();
+              if (tag === 'p' || tag === 'div') {
+                const text = inline();
+                return text || lightMDElements(node);
+              }
               if (tag === 'blockquote') {
                 return lightMDElements(node).split('\\n').map(line => line ? '> ' + line : '>').join('\\n');
               }
@@ -889,6 +1569,12 @@ final class MarkdownRenderer {
             }
 
             function lightMDExportMarkdown() {
+              if (window.lightMDMuya) {
+                const markdown = lightMDGetEditorMarkdown();
+                const source = document.querySelector('#lightmd-source');
+                if (source) source.value = markdown;
+                return markdown.trimEnd() + '\\n';
+              }
               const main = document.querySelector('main');
               return main ? lightMDElements(main).trim() + '\\n' : '';
             }
@@ -896,12 +1582,55 @@ final class MarkdownRenderer {
         </head>
         <body>
           \(tableOfContents)
+          <textarea id="lightmd-source">\(escapeHTML(sourceMarkdown))</textarea>
+          <section class="editor-shell">
+            <div id="lightmd-editor"></div>
+          </section>
           <main>
             \(body)
           </main>
         </body>
         </html>
         """
+    }
+
+    private func muyaCSS() -> String {
+        resourceText(named: "muya-style", extension: "css", subdirectory: "Muya")
+    }
+
+    private func muyaScriptTag() -> String {
+        if let url = resourceURL(named: "lightmd-muya.bundle", extension: "js", subdirectory: "Muya") {
+            return #"<script src="\#(escapeHTML(url.absoluteString))"></script>"#
+        }
+
+        let script = resourceText(named: "lightmd-muya.bundle", extension: "js", subdirectory: "Muya")
+            .replacingOccurrences(of: "</script", with: "<\\/script")
+        return "<script>\(script)</script>"
+    }
+
+    private func resourceText(named name: String, extension fileExtension: String, subdirectory: String) -> String {
+        if let bundleURL = resourceURL(named: name, extension: fileExtension, subdirectory: subdirectory),
+           let text = try? String(contentsOf: bundleURL, encoding: .utf8) {
+            return text
+        }
+        return ""
+    }
+
+    private func resourceURL(named name: String, extension fileExtension: String, subdirectory: String) -> URL? {
+        if let bundleURL = Bundle.main.url(forResource: name, withExtension: fileExtension, subdirectory: subdirectory) {
+            return bundleURL
+        }
+
+        let sourceURL = URL(fileURLWithPath: #filePath)
+        let projectURL = sourceURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let localURL = projectURL
+            .appendingPathComponent("Assets")
+            .appendingPathComponent(subdirectory)
+            .appendingPathComponent("\(name).\(fileExtension)")
+        return FileManager.default.fileExists(atPath: localURL.path) ? localURL : nil
     }
 
     private func markdownToHTML(_ markdown: String) -> String {
