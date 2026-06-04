@@ -5,6 +5,15 @@
 开发者：Kellan / 许可  
 联系邮箱：kenbot818@gmail.com
 
+## 下载
+
+当前版本：v0.1.0
+
+- Release 页面：[LightMD v0.1.0](https://github.com/kellanxu/light-md-reader/releases/tag/v0.1.0)
+- 直接下载：[LightMD.dmg](https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg)
+
+下载 DMG 后打开，把 `LightMD` 拖到 `Applications` 即可安装。
+
 ## 当前能力
 
 - Swift 原生 Mac App
