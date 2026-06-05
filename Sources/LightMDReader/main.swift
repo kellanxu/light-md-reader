@@ -269,6 +269,8 @@ final class MonogramIconView: NSView {
 }
 
 final class RoundedReaderView: NSView {
+    private let cornerRadius: CGFloat = 14
+
     var fillColor: NSColor = .windowBackgroundColor {
         didSet {
             layer?.backgroundColor = fillColor.cgColor
@@ -280,7 +282,7 @@ final class RoundedReaderView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = fillColor.cgColor
-        layer?.cornerRadius = 28
+        layer?.cornerRadius = cornerRadius
         layer?.cornerCurve = .continuous
         layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         layer?.borderWidth = 0.5
