@@ -4,168 +4,142 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LightMD v2 - Agent 写，LightMD 读</title>
-  <meta name="description" content="LightMD 是给 AI Agent 生成的 Markdown 文档准备的本地阅读器。轻量、默认只读、双击即读。">
+  <meta name="description" content="LightMD 是给 AI Agent 生成的 Markdown 文档准备的轻量 Mac 阅读器。双击即读，本地优先，默认只读。">
   <link rel="icon" href="../Assets/AppIcon.iconset/icon_32x32.png">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div class="cursor-glow" aria-hidden="true"></div>
-
-  <header class="topbar" aria-label="LightMD v2 导航">
-    <a class="mark" href="#top" aria-label="LightMD v2 首页">
+  <header class="site-header" aria-label="LightMD v2 导航">
+    <a class="brand" href="#top" aria-label="LightMD 首页">
       <img src="../Assets/AppIcon.iconset/icon_128x128.png" alt="">
       <span>LightMD</span>
     </a>
     <nav aria-label="页面导航">
-      <a href="#route">路径</a>
-      <a href="#reader">阅读舱</a>
+      <a href="#features">特性</a>
+      <a href="#preview">预览</a>
       <a href="#download">下载</a>
     </nav>
-    <a class="download-chip magnet" href="https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg">下载 DMG</a>
+    <a class="header-cta pressable" href="https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg">下载 Mac 版</a>
   </header>
 
   <main id="top">
     <section class="hero">
-      <div class="hero-grid">
-        <div class="hero-copy reveal">
-          <p class="label">Agent document terminal</p>
-          <h1>Agent 写，<span>LightMD 读。</span></h1>
-          <p class="lede">让 AI 生成的 `.md` 不再散落在编辑器、预览器和临时窗口之间。LightMD 把它们收进一个轻、快、本地优先的阅读舱。</p>
-          <div class="hero-actions">
-            <a class="primary-action magnet burst" href="https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg">
-              <span>下载 Mac 版</span>
-              <b>v0.1.0</b>
-            </a>
-            <a class="ghost-action magnet" href="../site/">对比原版官网</a>
-          </div>
+      <div class="hero-copy reveal">
+        <p class="eyebrow">面向 AI Agent 文档的本地阅读器</p>
+        <h1>Agent 写，LightMD 读。</h1>
+        <p class="lead">AI 生成的 Markdown，不需要先进一个复杂编辑器。双击 `.md`，直接进入干净的阅读视图。</p>
+        <div class="hero-actions">
+          <a class="primary-button pressable" href="https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg">下载 Mac 版</a>
+          <a class="secondary-button pressable" href="../site/">查看原版官网</a>
         </div>
+      </div>
 
-        <div class="signal-stack reveal" aria-hidden="true">
-          <span>AGENT</span>
-          <span>MARKDOWN</span>
-          <span>LOCAL READ</span>
-        </div>
-
-        <div class="reader-lab reveal" aria-label="LightMD 阅读舱动态演示">
-          <div class="scanline" aria-hidden="true"></div>
-          <div class="input-sheet">
-            <div class="sheet-head">
+      <div class="product-preview reveal" aria-label="LightMD 阅读界面预览">
+        <div class="window">
+          <div class="window-bar">
+            <div class="traffic" aria-hidden="true">
               <span></span><span></span><span></span>
-              <strong>agent-output.md</strong>
             </div>
-            <div class="tokens" aria-hidden="true">
-              <i># 方案草稿</i>
-              <i>- 用户想要轻量阅读</i>
-              <i>- 本地文件优先</i>
-              <i>```export</i>
-              <i>PNG / PDF / HTML</i>
-              <i>```</i>
-            </div>
-          </div>
-
-          <div class="reader-device">
-            <div class="device-top">
-              <div>
-                <span></span><span></span><span></span>
-              </div>
+            <div class="window-title">
+              <img src="../Assets/AppIcon.iconset/icon_32x32.png" alt="">
               <strong>LightMD</strong>
-              <em>Read mode</em>
             </div>
-            <div class="device-body">
-              <aside>
-                <p>Open files</p>
-                <b>方案草稿.md</b>
-                <b>市场简报.md</b>
-                <b>会议纪要.md</b>
-              </aside>
-              <article>
-                <small>本地阅读视图</small>
-                <h2>方案草稿</h2>
-                <p>Agent 写完之后，直接双击打开。默认只读，需要修改时再进入编辑模式。</p>
-                <div class="quote">不做知识库，不做云同步，不打扰阅读。</div>
-                <div class="export-row">
-                  <span>PNG</span><span>PDF</span><span>HTML</span>
-                </div>
-              </article>
-            </div>
+            <div class="mode">阅读模式</div>
+          </div>
+          <div class="window-body">
+            <aside>
+              <p>打开的文件</p>
+              <span class="active">Agent 简报.md</span>
+              <span>产品方案.md</span>
+              <span>会议纪要.md</span>
+            </aside>
+            <article>
+              <small>本地 Markdown 阅读视图</small>
+              <h2>Agent 简报</h2>
+              <p>LightMD 把 Agent 生成的 Markdown 渲染成清爽文档。默认只读，需要修改时再进入编辑模式。</p>
+              <blockquote>不做知识库，不做云同步，不打扰阅读。</blockquote>
+              <div class="export-list">
+                <span>PNG</span>
+                <span>PDF</span>
+                <span>HTML</span>
+              </div>
+            </article>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="route" class="route-section">
-      <div class="route-title reveal">
-        <p class="label">The route</p>
-        <h2>从 Agent 到阅读，只留一条短路径。</h2>
+    <section id="features" class="feature-section">
+      <div class="section-heading reveal">
+        <p class="eyebrow">只做必要动作</p>
+        <h2>轻，是因为边界清楚。</h2>
       </div>
-      <div class="route-line reveal">
-        <article>
-          <span>01</span>
-          <h3>生成</h3>
-          <p>Agent 输出报告、方案、复盘，Markdown 是最自然的交付形态。</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>落地</h3>
-          <p>文件留在本地，不需要账号、同步或复杂工作区。</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>阅读</h3>
-          <p>双击 `.md`，进入清爽阅读视图，再按需要编辑或导出。</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="reader" class="reader-section">
-      <div class="reader-manifest reveal">
-        <p class="label">Reader principles</p>
-        <h2>默认只读，是一种产品态度。</h2>
-        <p>Agent 生成的文档通常先用于理解、判断和转发。LightMD 把“阅读”放在第一位，减少误改文件的风险。</p>
-      </div>
-      <div class="principles">
-        <article class="principle-card reveal magnet">
+      <div class="feature-grid">
+        <article class="feature-card reveal">
           <span>.md</span>
           <h3>双击即读</h3>
-          <p>把 Markdown 当成普通文档，而不是每次都打开重型编辑器。</p>
+          <p>把 Markdown 当作普通文档打开，不再每次进入重型编辑环境。</p>
         </article>
-        <article class="principle-card reveal magnet">
-          <span>LOCAL</span>
+        <article class="feature-card reveal">
+          <span>本地</span>
           <h3>本地优先</h3>
-          <p>不做云同步，不做账号，不把文件送到另一个系统。</p>
+          <p>文件留在 Mac 上。不需要账号，不依赖云同步，也不改变你的目录结构。</p>
         </article>
-        <article class="principle-card reveal magnet">
-          <span>EXPORT</span>
+        <article class="feature-card reveal">
+          <span>只读</span>
+          <h3>默认只读</h3>
+          <p>先阅读，后编辑。需要修改时再明确切换模式，减少误改原文件。</p>
+        </article>
+        <article class="feature-card reveal">
+          <span>导出</span>
           <h3>轻量导出</h3>
-          <p>阅读完成后，可以导出 PNG、PDF 或 HTML，方便分享。</p>
+          <p>把当前文档导出为 PNG、PDF 或 HTML，方便分享和归档。</p>
         </article>
       </div>
     </section>
 
-    <section class="theme-ribbon" aria-label="LightMD 主题展示">
-      <div class="ribbon-card blue reveal">
-        <span>蓝</span>
-        <p>清爽默认</p>
+    <section id="preview" class="workflow-section">
+      <div class="workflow-copy reveal">
+        <p class="eyebrow">Agent 到阅读</p>
+        <h2>让 `.md` 有一个更自然的终点。</h2>
+        <p>Agent 负责生成内容，LightMD 负责打开、阅读、导出。它不是知识库，也不是写作系统，只是把高频阅读这一步做轻。</p>
       </div>
-      <div class="ribbon-card paper reveal">
-        <span>纸</span>
-        <p>长文沉浸</p>
+      <div class="workflow-list reveal">
+        <div>
+          <span>01</span>
+          <p>Agent 输出 Markdown</p>
+        </div>
+        <div>
+          <span>02</span>
+          <p>双击本地文件</p>
+        </div>
+        <div>
+          <span>03</span>
+          <p>进入阅读视图</p>
+        </div>
       </div>
-      <div class="ribbon-card night reveal">
-        <span>夜</span>
-        <p>低光阅读</p>
+    </section>
+
+    <section class="theme-section">
+      <div class="theme-card blue reveal">
+        <strong>蓝</strong>
+        <span>清爽默认</span>
+      </div>
+      <div class="theme-card paper reveal">
+        <strong>纸</strong>
+        <span>长文阅读</span>
+      </div>
+      <div class="theme-card night reveal">
+        <strong>夜</strong>
+        <span>低光环境</span>
       </div>
     </section>
 
     <section id="download" class="download-section reveal">
       <img src="../Assets/AppIcon.iconset/icon_256x256.png" alt="LightMD 图标">
-      <p class="label">Ready</p>
-      <h2>给 Agent 生成的 Markdown，一个轻便的终点。</h2>
-      <a class="primary-action magnet burst" href="https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg">
-        <span>下载 Mac 版</span>
-        <b>GitHub Release</b>
-      </a>
-      <p class="release-note">当前版本：LightMD v0.1.0</p>
+      <p class="eyebrow">LightMD v0.1.0</p>
+      <h2>下载后，把 Markdown 交给 LightMD。</h2>
+      <a class="primary-button pressable" href="https://github.com/kellanxu/light-md-reader/releases/download/v0.1.0/LightMD.dmg">下载 Mac 版</a>
     </section>
   </main>
 
