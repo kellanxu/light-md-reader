@@ -212,20 +212,41 @@ enum ReaderTheme: Int, CaseIterable {
         }
     }
 
-    var readerBackgroundColor: NSColor {
+    func readerBackgroundColor(isDark: Bool) -> NSColor {
         switch self {
-        case .blue: return NSColor(calibratedRed: 0.985, green: 0.99, blue: 0.998, alpha: 1)
+        case .blue:
+            return isDark
+                ? NSColor(calibratedRed: 0.105, green: 0.118, blue: 0.145, alpha: 1)
+                : NSColor(calibratedRed: 0.985, green: 0.99, blue: 0.998, alpha: 1)
         case .paper: return NSColor(calibratedRed: 0.985, green: 0.968, blue: 0.935, alpha: 1)
-        case .night: return NSColor(calibratedRed: 0.122, green: 0.133, blue: 0.157, alpha: 1)
+        case .night: return NSColor(calibratedRed: 0.105, green: 0.118, blue: 0.145, alpha: 1)
         }
     }
 
-    var sidebarBaseColor: NSColor {
+    func sidebarBaseColor(isDark: Bool) -> NSColor {
         switch self {
-        case .blue: return NSColor(calibratedWhite: 0.88, alpha: 1)
+        case .blue:
+            return isDark
+                ? NSColor(calibratedRed: 0.145, green: 0.158, blue: 0.182, alpha: 1)
+                : NSColor(calibratedWhite: 0.88, alpha: 1)
         case .paper: return NSColor(calibratedWhite: 0.86, alpha: 1)
-        case .night: return NSColor(calibratedWhite: 0.17, alpha: 1)
+        case .night: return NSColor(calibratedRed: 0.145, green: 0.158, blue: 0.182, alpha: 1)
         }
+    }
+}
+
+extension NSAppearance {
+    var isDarkMode: Bool {
+        bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+}
+
+final class ThemeAwareContentView: NSView {
+    var onAppearanceChange: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?()
     }
 }
 
@@ -522,10 +543,24 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
-        window.appearance = currentTheme.windowAppearance
         super.init(window: window)
+        let contentView = ThemeAwareContentView()
+        contentView.onAppearanceChange = { [weak self] in
+            self?.applyThemeColors(reloadDocument: true)
+        }
+        window.contentView = contentView
         setupUI()
         installKeyboardShortcuts()
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(systemAppearanceChanged(_:)),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+    }
+
+    deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 
     required init?(coder: NSCoder) {
@@ -601,14 +636,14 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         modeControl.selectedSegment = 0
         updateMode()
         updateStatus()
-        webView.loadHTMLString(renderer.welcomeHTML(theme: currentTheme), baseURL: nil)
+        webView.loadHTMLString(renderer.welcomeHTML(theme: effectiveTheme), baseURL: nil)
     }
 
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
         contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = currentTheme.sidebarBaseColor.cgColor
+        contentView.layer?.backgroundColor = effectiveTheme.sidebarBaseColor(isDark: effectiveThemeIsDark).cgColor
 
         let sidebar = NSVisualEffectView()
         sidebar.material = .sidebar
@@ -675,7 +710,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         ])
 
         readerContainer.translatesAutoresizingMaskIntoConstraints = false
-        readerContainer.fillColor = currentTheme.readerBackgroundColor
+        readerContainer.fillColor = effectiveTheme.readerBackgroundColor(isDark: effectiveThemeIsDark)
 
         let reader = NSStackView()
         reader.orientation = .vertical
@@ -747,7 +782,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         exportButton.menu?.addItem(withTitle: "HTML", action: #selector(exportAsHTML(_:)), keyEquivalent: "")
         exportButton.menu?.items.forEach { $0.target = self }
 
-        themeControl.selectedSegment = currentTheme.rawValue
+        themeControl.selectedSegment = effectiveTheme.rawValue
         themeControl.target = self
         themeControl.action = #selector(themeChanged(_:))
         themeControl.controlSize = .small
@@ -795,6 +830,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         ])
 
         window?.center()
+        applyThemeColors(reloadDocument: false)
     }
 
     private func installKeyboardShortcuts() {
@@ -841,7 +877,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
         let icon = MonogramIconView()
         icon.text = documents[row].monogram
-        icon.fillColor = currentTheme.accentColor
+        icon.fillColor = effectiveTheme.accentColor
         icon.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             icon.widthAnchor.constraint(equalToConstant: 26),
@@ -893,7 +929,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: document.content)) · \(document.subtitle)"
         window?.title = document.title
         updateStatus()
-        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: currentTheme), baseURL: document.url.deletingLastPathComponent())
+        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: effectiveTheme), baseURL: document.url.deletingLastPathComponent())
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
             self?.updateMode()
@@ -925,7 +961,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
                 self.documents[selectedIndex].content = content
                 self.tableView.reloadData()
                 self.detailLabel.stringValue = "\(self.modeLabel()) · \(self.formattedSize(for: content)) · \(self.documents[selectedIndex].subtitle)"
-                self.webView.loadHTMLString(self.renderer.render(content, title: self.documents[selectedIndex].title, theme: self.currentTheme), baseURL: url.deletingLastPathComponent())
+                self.webView.loadHTMLString(self.renderer.render(content, title: self.documents[selectedIndex].title, theme: self.effectiveTheme), baseURL: url.deletingLastPathComponent())
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                     self?.applyFontScale()
                     self?.updateMode()
@@ -970,7 +1006,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private func export(document: MarkdownDocument, to destinationURL: URL, as format: ExportFormat) {
         currentMarkdown { [weak self] markdown in
             guard let self else { return }
-            let html = self.renderer.render(markdown, title: document.title, theme: self.currentTheme)
+            let html = self.renderer.render(markdown, title: document.title, theme: self.effectiveTheme)
 
             if format == .html {
                 do {
@@ -1046,25 +1082,51 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         updateStatus()
     }
 
+    private var systemPrefersDarkMode: Bool {
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+    }
+
+    private var effectiveTheme: ReaderTheme {
+        systemPrefersDarkMode ? .night : currentTheme
+    }
+
+    private var effectiveThemeIsDark: Bool {
+        effectiveTheme == .night
+    }
+
+    private func applyThemeColors(reloadDocument: Bool) {
+        let theme = effectiveTheme
+        let isDark = effectiveThemeIsDark
+        window?.appearance = theme.windowAppearance
+        window?.contentView?.layer?.backgroundColor = theme.sidebarBaseColor(isDark: isDark).cgColor
+        readerContainer.fillColor = theme.readerBackgroundColor(isDark: isDark)
+        themeControl.selectedSegment = theme.rawValue
+        tableView.reloadData()
+
+        if reloadDocument {
+            reloadCurrentDocument()
+        }
+    }
+
     @objc private func themeChanged(_ sender: NSSegmentedControl) {
         guard let theme = ReaderTheme(rawValue: sender.selectedSegment) else { return }
         currentTheme = theme
         UserDefaults.standard.set(theme.rawValue, forKey: themeDefaultsKey)
-        window?.appearance = theme.windowAppearance
-        window?.contentView?.layer?.backgroundColor = theme.sidebarBaseColor.cgColor
-        readerContainer.fillColor = theme.readerBackgroundColor
-        tableView.reloadData()
-        reloadCurrentDocument()
+        applyThemeColors(reloadDocument: true)
+    }
+
+    @objc private func systemAppearanceChanged(_ notification: Notification) {
+        applyThemeColors(reloadDocument: true)
     }
 
     private func reloadCurrentDocument() {
         guard let selectedIndex, documents.indices.contains(selectedIndex) else {
-            webView.loadHTMLString(renderer.welcomeHTML(theme: currentTheme), baseURL: nil)
+            webView.loadHTMLString(renderer.welcomeHTML(theme: effectiveTheme), baseURL: nil)
             return
         }
 
         let document = documents[selectedIndex]
-        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: currentTheme), baseURL: document.url.deletingLastPathComponent())
+        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: effectiveTheme), baseURL: document.url.deletingLastPathComponent())
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
             self?.updateMode()
@@ -1204,26 +1266,26 @@ final class MarkdownRenderer {
             }
             html[data-theme="night"] {
               color-scheme: dark;
-              --bg: #1f2228;
-              --fg: #edf1f7;
-              --muted: #a8b1c1;
-              --border: #3a4250;
-              --code-bg: #292f38;
-              --quote-bg: #252d35;
-              --link: #8bb8ff;
-              --accent: #8bb8ff;
-              --focus-ring: rgba(139, 184, 255, 0.28);
+              --bg: #1b1e25;
+              --fg: #f3f6fb;
+              --muted: #bac4d2;
+              --border: #424b5b;
+              --code-bg: #252b34;
+              --quote-bg: #222a34;
+              --link: #93c5ff;
+              --accent: #93c5ff;
+              --focus-ring: rgba(147, 197, 255, 0.32);
             }
             @media (prefers-color-scheme: dark) {
               html[data-theme="blue"] {
-                --bg: #1f2228;
-                --fg: #edf1f7;
-                --muted: #a8b1c1;
-                --border: #3a4250;
-                --code-bg: #292f38;
-                --quote-bg: #252d35;
-                --link: #8bb8ff;
-                --accent: #8bb8ff;
+                --bg: #1b1e25;
+                --fg: #f3f6fb;
+                --muted: #bac4d2;
+                --border: #424b5b;
+                --code-bg: #252b34;
+                --quote-bg: #222a34;
+                --link: #93c5ff;
+                --accent: #93c5ff;
               }
             }
             body {
@@ -1317,6 +1379,7 @@ final class MarkdownRenderer {
               line-height: 1;
             }
             h1, h2, h3, h4, h5, h6 {
+              color: var(--fg);
               line-height: 1.28;
               margin: 1.45em 0 0.55em;
               letter-spacing: 0;
@@ -1328,6 +1391,7 @@ final class MarkdownRenderer {
             h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
             h3 { font-size: 1.25rem; }
             p { margin: 0.65em 0; }
+            strong { color: var(--fg); }
             a { color: var(--link); }
             code {
               background: var(--code-bg);
