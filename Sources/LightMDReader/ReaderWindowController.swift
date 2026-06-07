@@ -6,6 +6,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let renderer = MarkdownRenderer()
     private var documents: [MarkdownDocument] = []
     private var selectedIndex: Int?
+    private var untitledDocumentCount = 0
     private var currentTheme: ReaderTheme = ReaderTheme(rawValue: UserDefaults.standard.integer(forKey: themeDefaultsKey)) ?? .blue
 
     private let sidebarWidth: CGFloat = 240
@@ -81,6 +82,16 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             guard response == .OK else { return }
             self?.openFiles(panel.urls)
         }
+    }
+
+    @objc func newDocument(_ sender: Any?) {
+        untitledDocumentCount += 1
+        let temporaryTitle = untitledDocumentCount == 1 ? "未命名" : "未命名 \(untitledDocumentCount)"
+        documents.append(MarkdownDocument(temporaryTitle: temporaryTitle))
+        tableView.reloadData()
+        selectDocument(at: documents.count - 1)
+        modeControl.selectedSegment = 1
+        updateMode()
     }
 
     @objc func closeCurrentDocument(_ sender: Any?) {
@@ -336,11 +347,20 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
-                  event.charactersIgnoringModifiers?.lowercased() == "s" else {
+                  let key = event.charactersIgnoringModifiers?.lowercased() else {
                 return event
             }
-            self.saveCurrentDocument(nil)
-            return nil
+
+            switch key {
+            case "n":
+                self.newDocument(nil)
+                return nil
+            case "s":
+                self.saveCurrentDocument(nil)
+                return nil
+            default:
+                return event
+            }
         }
     }
 
@@ -428,7 +448,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: document.content)) · \(document.subtitle)"
         window?.title = document.title
         updateStatus()
-        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: effectiveTheme), baseURL: document.url.deletingLastPathComponent())
+        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: effectiveTheme), baseURL: document.baseURL)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
             self?.updateMode()
@@ -442,7 +462,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
     @objc func saveCurrentDocument(_ sender: Any?) {
         guard let selectedIndex, documents.indices.contains(selectedIndex) else { return }
-        let url = documents[selectedIndex].url
+        let existingURL = documents[selectedIndex].url
 
         webView.evaluateJavaScript("window.lightMDExportMarkdown && window.lightMDExportMarkdown();") { [weak self] result, error in
             guard let self else { return }
@@ -455,19 +475,46 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
                 return
             }
 
-            do {
-                try content.write(to: url, atomically: true, encoding: .utf8)
-                self.documents[selectedIndex].content = content
-                self.tableView.reloadData()
-                self.detailLabel.stringValue = "\(self.modeLabel()) · \(self.formattedSize(for: content)) · \(self.documents[selectedIndex].subtitle)"
-                self.webView.loadHTMLString(self.renderer.render(content, title: self.documents[selectedIndex].title, theme: self.effectiveTheme), baseURL: url.deletingLastPathComponent())
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    self?.applyFontScale()
-                    self?.updateMode()
-                }
-            } catch {
-                self.showError("无法保存文件", detail: "\(url.lastPathComponent)\n\(error.localizedDescription)")
+            guard let existingURL else {
+                self.promptToSaveNewDocument(content: content, selectedIndex: selectedIndex)
+                return
             }
+
+            self.saveDocument(content: content, to: existingURL, selectedIndex: selectedIndex)
+        }
+    }
+
+    private func promptToSaveNewDocument(content: String, selectedIndex: Int) {
+        let panel = NSSavePanel()
+        panel.title = "保存 Markdown"
+        panel.allowedContentTypes = [UTType(filenameExtension: "md"), UTType.plainText].compactMap { $0 }
+        panel.nameFieldStringValue = documents[selectedIndex].suggestedFileName + ".md"
+        panel.canCreateDirectories = true
+
+        panel.beginSheetModal(for: window!) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.saveDocument(content: content, to: url, selectedIndex: selectedIndex)
+        }
+    }
+
+    private func saveDocument(content: String, to url: URL, selectedIndex: Int) {
+        guard documents.indices.contains(selectedIndex) else { return }
+
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            documents[selectedIndex].url = url
+            documents[selectedIndex].temporaryTitle = nil
+            documents[selectedIndex].content = content
+            tableView.reloadData()
+            detailLabel.stringValue = "\(modeLabel()) · \(formattedSize(for: content)) · \(documents[selectedIndex].subtitle)"
+            window?.title = documents[selectedIndex].title
+            webView.loadHTMLString(renderer.render(content, title: documents[selectedIndex].title, theme: effectiveTheme), baseURL: documents[selectedIndex].baseURL)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.applyFontScale()
+                self?.updateMode()
+            }
+        } catch {
+            showError("无法保存文件", detail: "\(url.lastPathComponent)\n\(error.localizedDescription)")
         }
     }
 
@@ -493,7 +540,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         let panel = NSSavePanel()
         panel.title = format.title
         panel.allowedContentTypes = [format.contentType]
-        panel.nameFieldStringValue = document.url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
+        panel.nameFieldStringValue = document.suggestedFileName + "." + format.fileExtension
         panel.canCreateDirectories = true
 
         panel.beginSheetModal(for: window!) { [weak self] response in
@@ -520,7 +567,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             var session: RenderExportSession?
             session = RenderExportSession(
                 html: html,
-                baseURL: document.url.deletingLastPathComponent(),
+                baseURL: document.baseURL ?? URL(fileURLWithPath: NSTemporaryDirectory()),
                 destinationURL: destinationURL,
                 format: format
             ) { [weak self, weak session] result in
@@ -625,7 +672,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         }
 
         let document = documents[selectedIndex]
-        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: effectiveTheme), baseURL: document.url.deletingLastPathComponent())
+        webView.loadHTMLString(renderer.render(document.content, title: document.title, theme: effectiveTheme), baseURL: document.baseURL)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.applyFontScale()
             self?.updateMode()

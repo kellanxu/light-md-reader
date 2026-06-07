@@ -8,19 +8,44 @@ let developerDisplayName = "Kellan / 许可"
 let developerEmail = "kenbot818@gmail.com"
 
 struct MarkdownDocument: Equatable {
-    let url: URL
+    var url: URL?
+    var temporaryTitle: String?
     var content: String
 
+    init(url: URL, content: String) {
+        self.url = url
+        self.temporaryTitle = nil
+        self.content = content
+    }
+
+    init(temporaryTitle: String, content: String = "") {
+        self.url = nil
+        self.temporaryTitle = temporaryTitle
+        self.content = content
+    }
+
+    var isSaved: Bool {
+        url != nil
+    }
+
     var title: String {
-        url.lastPathComponent
+        url?.lastPathComponent ?? temporaryTitle ?? "未命名"
     }
 
     var subtitle: String {
-        url.deletingLastPathComponent().path
+        url?.deletingLastPathComponent().path ?? "尚未保存"
+    }
+
+    var baseURL: URL? {
+        url?.deletingLastPathComponent()
+    }
+
+    var suggestedFileName: String {
+        url?.deletingPathExtension().lastPathComponent ?? temporaryTitle ?? "未命名"
     }
 
     var monogram: String {
-        let baseName = url.deletingPathExtension().lastPathComponent
+        let baseName = url?.deletingPathExtension().lastPathComponent ?? temporaryTitle ?? "M"
         let first = baseName.trimmingCharacters(in: .whitespacesAndNewlines).first
         return first.map { String($0).uppercased() } ?? "M"
     }

@@ -65,6 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileMenuItem = NSMenuItem()
         let fileMenu = NSMenu(title: "文件")
+        let newItem = fileMenu.addItem(withTitle: "新建", action: #selector(newDocument(_:)), keyEquivalent: "n")
+        newItem.target = self
         fileMenu.addItem(withTitle: "打开...", action: #selector(ReaderWindowController.openDocument(_:)), keyEquivalent: "o")
         fileMenu.addItem(withTitle: "保存", action: #selector(ReaderWindowController.saveCurrentDocument(_:)), keyEquivalent: "s")
         fileMenu.addItem(NSMenuItem.separator())
@@ -84,6 +86,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(viewMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @MainActor
+    @objc private func newDocument(_ sender: Any?) {
+        readerWindow?.newDocument(sender)
     }
 
     @MainActor
