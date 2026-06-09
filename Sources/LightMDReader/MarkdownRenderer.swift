@@ -462,10 +462,6 @@ final class MarkdownRenderer {
     }
 
     private func muyaScriptTag() -> String {
-        if let url = resourceURL(named: "lightmd-muya.bundle", extension: "js", subdirectory: "Muya") {
-            return #"<script src="\#(escapeHTML(url.absoluteString))"></script>"#
-        }
-
         let script = resourceText(named: "lightmd-muya.bundle", extension: "js", subdirectory: "Muya")
             .replacingOccurrences(of: "</script", with: "<\\/script")
         return "<script>\(script)</script>"

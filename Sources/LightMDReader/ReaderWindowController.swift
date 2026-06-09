@@ -2,7 +2,7 @@ import AppKit
 import UniformTypeIdentifiers
 import WebKit
 
-final class ReaderWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
+final class ReaderWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, WKNavigationDelegate {
     private let renderer = MarkdownRenderer()
     private var documents: [MarkdownDocument] = []
     private var selectedIndex: Int?
@@ -17,6 +17,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
     private let titleLabel = NSTextField(labelWithString: appDisplayName)
     private let detailLabel = NSTextField(labelWithString: "双击即读 Markdown")
     private let openButton = NSButton(title: "", target: nil, action: nil)
+    private let newDocumentButton = NSButton(title: "新建", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "只读")
     private let modeControl = NSSegmentedControl(labels: ["阅读", "编辑"], trackingMode: .selectOne, target: nil, action: nil)
     private let saveButton = NSButton(title: "保存", target: nil, action: nil)
@@ -173,7 +174,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         appLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         openButton.target = self
         openButton.action = #selector(openDocument(_:))
-        openButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "打开文件")
+        openButton.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "打开文件")
         openButton.imagePosition = .imageOnly
         openButton.bezelStyle = .rounded
         openButton.controlSize = .small
@@ -257,6 +258,14 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         modeControl.setWidth(54, forSegment: 0)
         modeControl.setWidth(54, forSegment: 1)
 
+        newDocumentButton.target = self
+        newDocumentButton.action = #selector(newDocument(_:))
+        newDocumentButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "新建")
+        newDocumentButton.imagePosition = .imageLeading
+        newDocumentButton.bezelStyle = .rounded
+        newDocumentButton.controlSize = .small
+        newDocumentButton.toolTip = "新建 Markdown 文档"
+
         saveButton.target = self
         saveButton.action = #selector(saveCurrentDocument(_:))
         saveButton.bezelStyle = .rounded
@@ -301,7 +310,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
             themeControl.setWidth(34, forSegment: index)
         }
 
-        let controls = NSStackView(views: [modeControl, saveButton, searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton, exportButton, themeControl])
+        let controls = NSStackView(views: [newDocumentButton, modeControl, saveButton, searchField, previousMatchButton, nextMatchButton, decreaseFontButton, increaseFontButton, exportButton, themeControl])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 6
@@ -313,6 +322,7 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         contentSeparator.boxType = .separator
         contentSeparator.translatesAutoresizingMaskIntoConstraints = false
 
+        webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
         reader.addArrangedSubview(header)
         reader.addArrangedSubview(contentSeparator)
@@ -434,6 +444,11 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         selectDocument(at: tableView.selectedRow)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        applyFontScale()
+        updateMode()
     }
 
     private func selectDocument(at index: Int) {
@@ -623,7 +638,13 @@ final class ReaderWindowController: NSWindowController, NSTableViewDataSource, N
         searchField.isHidden = isEditing
         previousMatchButton.isHidden = isEditing
         nextMatchButton.isHidden = isEditing
-        webView.evaluateJavaScript("window.lightMDSetEditing && window.lightMDSetEditing(\(isEditing ? "true" : "false"));")
+        if isEditing {
+            window?.makeFirstResponder(webView)
+        }
+        webView.evaluateJavaScript("window.lightMDSetEditing && window.lightMDSetEditing(\(isEditing ? "true" : "false"));") { [weak self] _, _ in
+            guard let self, isEditing else { return }
+            self.window?.makeFirstResponder(self.webView)
+        }
         detailLabel.stringValue = detailLabel.stringValue.replacingOccurrences(of: isEditing ? "只读" : "编辑", with: modeLabel())
         updateStatus()
     }
